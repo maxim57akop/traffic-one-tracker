@@ -9,8 +9,6 @@ import {
   BarChart3,
   Bell,
   Blocks,
-  PanelLeftClose,
-  PanelLeftOpen,
   ChevronRight,
   FileText,
   Globe2,
@@ -213,7 +211,17 @@ export function AppShell({ title, children }: AppShellProps) {
           sidebarCollapsed ? "lg:grid-cols-[84px_1fr]" : "lg:grid-cols-[260px_1fr]",
         ].join(" ")}
       >
-        <aside className="border-r border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
+        <aside className="relative border-r border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
+          <Button
+            aria-label={sidebarCollapsed ? t("shell.expandSidebar") : t("shell.collapseSidebar")}
+            title={sidebarCollapsed ? t("shell.expandSidebar") : t("shell.collapseSidebar")}
+            variant="outline"
+            size="icon-sm"
+            onClick={toggleSidebar}
+            className="absolute -right-4 top-20 z-20 size-8 rounded-full border-neutral-200 bg-white shadow-sm hover:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:hover:bg-neutral-900"
+          >
+            <ChevronRight className={["h-4 w-4 transition-transform", sidebarCollapsed ? "" : "rotate-180"].join(" ")} />
+          </Button>
           <div
             className={[
               "flex h-16 items-center border-b border-neutral-200 dark:border-neutral-800",
@@ -234,15 +242,6 @@ export function AppShell({ title, children }: AppShellProps) {
                 {team?.name ?? t("shell.workspace")}
               </div>
             </div>
-            <Button
-              aria-label={sidebarCollapsed ? t("shell.expandSidebar") : t("shell.collapseSidebar")}
-              title={sidebarCollapsed ? t("shell.expandSidebar") : t("shell.collapseSidebar")}
-              variant="ghost"
-              size="icon-sm"
-              onClick={toggleSidebar}
-            >
-              {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-            </Button>
           </div>
 
           <nav className={["space-y-1 p-3", sidebarCollapsed ? "flex flex-col items-center" : ""].join(" ")}>
