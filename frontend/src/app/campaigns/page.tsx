@@ -7,12 +7,14 @@ import {
   BarChart3,
   ChevronDown,
   FileText,
+  GripVertical,
   Link2,
   MoreHorizontal,
   Pencil,
   Plus,
   RefreshCw,
   Settings,
+  Star,
   X,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
@@ -790,10 +792,16 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
 
             <section className="min-w-0 p-5">
               <div className="flex items-center gap-3">
-                <Button disabled={saving || (!selectedCampaign && !campaignForm.name.trim())} onClick={() => void openFlowModal()}>
-                  {c.createFlow}
-                  <ChevronDown className="size-4" />
-                </Button>
+                <button
+                  className="inline-flex h-10 overflow-hidden rounded-md bg-[#59bf5f] text-sm font-semibold text-white shadow-sm transition hover:bg-[#4caf54] disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={saving || (!selectedCampaign && !campaignForm.name.trim())}
+                  onClick={() => void openFlowModal()}
+                >
+                  <span className="flex items-center px-4">{c.createFlow}</span>
+                  <span className="flex w-10 items-center justify-center border-l border-white/25 bg-black/5">
+                    <ChevronDown className="size-4" />
+                  </span>
+                </button>
                 <div className="ml-auto flex items-center gap-2">
                   <Button variant="outline" size="icon">
                     <ChevronDown className="size-4 rotate-180" />
@@ -809,35 +817,70 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
                 </div>
               </div>
 
-              <div className="mt-16 text-center text-lg text-muted-foreground">
+              <div className="mt-10 text-center text-lg text-muted-foreground">
                 {selectedFlows.length === 0 ? (
                   c.emptyFlows
                 ) : (
-                  <div className="overflow-hidden rounded-sm border text-left dark:border-neutral-800">
+                  <div className="overflow-hidden text-left">
                     <table className="w-full text-sm">
-                      <thead className="bg-neutral-100 text-muted-foreground dark:bg-neutral-900">
-                        <tr>
-                          <th className="px-3 py-3 text-left">ID</th>
-                          <th className="px-3 py-3 text-left">{c.flowName}</th>
-                          <th className="px-3 py-3 text-left">{c.flowType}</th>
-                          <th className="px-3 py-3 text-left">{c.destination}</th>
-                          <th className="px-3 py-3 text-left">{t("common.state")}</th>
+                      <thead className="border-b border-neutral-200 text-neutral-500 dark:border-neutral-800">
+                        <tr className="h-12">
+                          <th className="w-10 px-2"></th>
+                          <th className="w-12 px-2">
+                            <input className="size-4 rounded border-neutral-300" type="checkbox" aria-label="Select all flows" />
+                          </th>
+                          <th className="w-28 px-3 text-left text-base font-medium">ID</th>
+                          <th className="px-3 text-left"></th>
+                          <th className="w-36 px-3 text-right text-base font-medium">Clicks</th>
+                          <th className="w-32 px-3 text-right text-base font-medium">UC</th>
+                          <th className="w-32 px-3 text-right text-base font-medium">Bots</th>
+                          <th className="w-12 px-2"></th>
                         </tr>
                       </thead>
                       <tbody>
-                        {selectedFlows.map((flow) => (
-                          <tr key={flow.id} className="border-t dark:border-neutral-800">
-                            <td className="px-3 py-3">{flow.id}</td>
-                            <td className="px-3 py-3">
-                              <button className="text-blue-500 hover:underline" onClick={() => openEditFlow(flow)}>
-                                {flow.name}
-                              </button>
-                            </td>
-                            <td className="px-3 py-3 capitalize">{flow.flow_type}</td>
-                            <td className="px-3 py-3">{flowDestinationLabel(flow.id, streams, destinations, offers, landings)}</td>
-                            <td className="px-3 py-3">{flow.status}</td>
-                          </tr>
-                        ))}
+                        {selectedFlows.map((flow) => {
+                          const destination = flowDestinationDetails(flow.id, streams, destinations, offers, landings);
+                          return (
+                            <tr key={flow.id} className="align-top">
+                              <td className="px-2 py-5 text-neutral-400">
+                                <GripVertical className="size-5" />
+                              </td>
+                              <td className="px-2 py-5">
+                                <input className="size-4 rounded border-neutral-300" type="checkbox" aria-label={`Select ${flow.name}`} />
+                              </td>
+                              <td className="px-3 py-5 text-lg text-neutral-950 dark:text-neutral-50">
+                                <div className="flex items-center gap-3">
+                                  <span>{flow.id}</span>
+                                  <span
+                                    className={`size-2.5 rounded-full ${flow.status === "active" ? "bg-[#59bf5f]" : "bg-neutral-300"}`}
+                                    title={flow.status}
+                                  />
+                                </div>
+                              </td>
+                              <td className="px-3 py-5">
+                                <div className="flex items-center gap-3">
+                                  <button className="text-lg text-blue-500 hover:underline" onClick={() => openEditFlow(flow)}>
+                                    {flow.name}
+                                  </button>
+                                  <Star className="size-5 text-neutral-400" />
+                                </div>
+                                <div className="mt-4 pl-10 text-lg font-semibold text-neutral-950 dark:text-neutral-50">
+                                  {destination.kindLabel}
+                                </div>
+                                <div className="mt-2 pl-16 text-base text-neutral-950 dark:text-neutral-50">
+                                  {destination.name}
+                                  <span className="ml-3 text-[#59bf5f]">{destination.weight}%</span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-5 text-right text-lg text-blue-500">0</td>
+                              <td className="px-3 py-5 text-right text-lg text-blue-500">0</td>
+                              <td className="px-3 py-5 text-right text-lg text-blue-500">0</td>
+                              <td className="px-2 py-5 text-right text-neutral-400">
+                                <X className="ml-auto size-5" />
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1718,7 +1761,7 @@ function CampaignToastView({ toast }: { toast: CampaignToast }) {
   );
 }
 
-function flowDestinationLabel(
+function flowDestinationDetails(
   flowId: number,
   streams: Stream[],
   destinations: StreamDestination[],
@@ -1728,15 +1771,17 @@ function flowDestinationLabel(
   const streamIds = streams.filter((stream) => stream.flow_id === flowId).map((stream) => stream.id);
   const destination = destinations.find((item) => streamIds.includes(item.stream_id));
   if (!destination) {
-    return "-";
+    return { kindLabel: "Destination", name: "-", weight: 100 };
   }
   if (destination.destination_type === "url") {
-    return destination.url ?? "URL";
+    return { kindLabel: "URL", name: destination.url ?? "URL", weight: destination.weight };
   }
   if (destination.destination_type === "offer") {
-    return offers.find((offer) => offer.id === destination.destination_id)?.name ?? `Offer #${destination.destination_id}`;
+    const name = offers.find((offer) => offer.id === destination.destination_id)?.name ?? `Offer #${destination.destination_id}`;
+    return { kindLabel: "Offers", name: `[${destination.destination_id ?? "-"}] ${name}`, weight: destination.weight };
   }
-  return landings.find((landing) => landing.id === destination.destination_id)?.name ?? `Landing #${destination.destination_id}`;
+  const name = landings.find((landing) => landing.id === destination.destination_id)?.name ?? `Landing #${destination.destination_id}`;
+  return { kindLabel: "Landings", name: `[${destination.destination_id ?? "-"}] ${name}`, weight: destination.weight };
 }
 
 function uniqueSorted(values: Array<string | undefined>) {
