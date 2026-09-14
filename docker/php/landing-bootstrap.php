@@ -3,11 +3,12 @@
 $trafficOneBase = $_SERVER['TRAFFICONE_LANDER_BASE'] ?? '';
 $trafficOneOfferURL = $_SERVER['TRAFFICONE_OFFER_URL'] ?? '';
 if ($trafficOneOfferURL === '') {
-    $query = [];
-    parse_str($_SERVER['QUERY_STRING'] ?? '', $query);
-    unset($query['click_id'], $query['subid'], $query['campaign_id'], $query['lp']);
-    $query = ['lp' => '1'] + $query;
-    $trafficOneOfferURL = '?' . http_build_query($query);
+    $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+    if ($requestUri !== '') {
+        $trafficOneOfferURL = $requestUri . (str_contains($requestUri, '?') ? '&' : '?') . 'lp=1';
+    } else {
+        $trafficOneOfferURL = '?lp=1';
+    }
 }
 
 ob_start(static function (string $buffer) use ($trafficOneBase, $trafficOneOfferURL): string {
