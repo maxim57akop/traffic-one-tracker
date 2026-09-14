@@ -2971,12 +2971,56 @@ func applyItemStatsToFlow(item *Flow, stats itemStats) {
 	item.Bots = stats.Bots
 }
 
+func (app *App) clickDestinationTypeWhere(ctx context.Context, teamID int64, destinationType string) string {
+	if destinationType != "landing" && destinationType != "offer" {
+		return "1 = 0"
+	}
+	conditions := []string{}
+	rows, err := app.db.Query(
+		ctx,
+		`SELECT sd.stream_id, sd.destination_id
+		 FROM stream_destinations sd
+		 JOIN streams s ON s.id = sd.stream_id
+		 JOIN flows f ON f.id = s.flow_id
+		 JOIN campaigns c ON c.id = f.campaign_id
+		 WHERE c.team_id = $1
+		   AND sd.destination_type = $2
+		   AND sd.destination_id IS NOT NULL
+		 LIMIT 500`,
+		teamID,
+		destinationType,
+	)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var streamID int64
+			var destinationID int64
+			if rows.Scan(&streamID, &destinationID) != nil {
+				continue
+			}
+			conditions = append(
+				conditions,
+				fmt.Sprintf("(stream_id = %d AND destination_id = %d)", streamID, destinationID),
+			)
+		}
+	}
+	if len(conditions) == 0 {
+		return fmt.Sprintf("destination_type = '%s'", destinationType)
+	}
+	return fmt.Sprintf(
+		"(destination_type = '%s' OR (destination_type = '' AND (%s)))",
+		destinationType,
+		strings.Join(conditions, " OR "),
+	)
+}
+
 func (app *App) landingStats(ctx context.Context, teamID int64) map[int64]itemStats {
 	result := map[int64]itemStats{}
 	teamFilter, hasCampaigns, err := app.clickHouseTeamFilter(ctx, teamID)
 	if err != nil || !hasCampaigns {
 		return result
 	}
+	destinationWhere := app.clickDestinationTypeWhere(ctx, teamID, "landing")
 
 	rows, err := app.queryClickHouseRows(
 		ctx,
@@ -2985,11 +3029,12 @@ func (app *App) landingStats(ctx context.Context, teamID int64) map[int64]itemSt
 			        count() AS clicks,
 			        sum(bot) AS bots
 			 FROM %s.clicks
-			 WHERE %s AND destination_type = 'landing' AND event_type = 'click'
+			 WHERE %s AND %s AND event_type = 'click'
 			 GROUP BY id
 			 FORMAT JSONEachRow`,
 			app.clickhouseDatabase,
 			teamFilter,
+			destinationWhere,
 		),
 	)
 	if err == nil {
@@ -3007,6 +3052,13 @@ func (app *App) landingStats(ctx context.Context, teamID int64) map[int64]itemSt
 
 	landingFilter := strings.ReplaceAll(teamFilter, "campaign_id", "l.campaign_id")
 	offerFilter := strings.ReplaceAll(teamFilter, "campaign_id", "o.campaign_id")
+	landingDestinationWhere := strings.ReplaceAll(destinationWhere, "destination_type", "l.destination_type")
+	landingDestinationWhere = strings.ReplaceAll(landingDestinationWhere, "stream_id", "l.stream_id")
+	landingDestinationWhere = strings.ReplaceAll(landingDestinationWhere, "destination_id", "l.destination_id")
+	offerDestinationWhere := app.clickDestinationTypeWhere(ctx, teamID, "offer")
+	offerDestinationWhere = strings.ReplaceAll(offerDestinationWhere, "destination_type", "o.destination_type")
+	offerDestinationWhere = strings.ReplaceAll(offerDestinationWhere, "stream_id", "o.stream_id")
+	offerDestinationWhere = strings.ReplaceAll(offerDestinationWhere, "destination_id", "o.destination_id")
 	lpRows, err := app.queryClickHouseRows(
 		ctx,
 		fmt.Sprintf(
@@ -3015,9 +3067,9 @@ func (app *App) landingStats(ctx context.Context, teamID int64) map[int64]itemSt
 			 FROM %s.clicks o
 			 INNER JOIN %s.clicks l ON l.click_id = o.click_id
 			 WHERE %s AND %s
-			   AND o.destination_type = 'offer'
+			   AND %s
 			   AND o.event_type = 'lp_click'
-			   AND l.destination_type = 'landing'
+			   AND %s
 			   AND l.event_type = 'click'
 			 GROUP BY id
 			 FORMAT JSONEachRow`,
@@ -3025,6 +3077,8 @@ func (app *App) landingStats(ctx context.Context, teamID int64) map[int64]itemSt
 			app.clickhouseDatabase,
 			offerFilter,
 			landingFilter,
+			offerDestinationWhere,
+			landingDestinationWhere,
 		),
 	)
 	if err != nil {
@@ -3048,6 +3102,7 @@ func (app *App) offerStats(ctx context.Context, teamID int64) map[int64]itemStat
 	if err != nil || !hasCampaigns {
 		return result
 	}
+	destinationWhere := app.clickDestinationTypeWhere(ctx, teamID, "offer")
 	rows, err := app.queryClickHouseRows(
 		ctx,
 		fmt.Sprintf(
@@ -3056,11 +3111,12 @@ func (app *App) offerStats(ctx context.Context, teamID int64) map[int64]itemStat
 			        countIf(event_type = 'lp_click') AS lp_clicks,
 			        sum(bot) AS bots
 			 FROM %s.clicks
-			 WHERE %s AND destination_type = 'offer' AND event_type IN ('click', 'lp_click')
+			 WHERE %s AND %s AND event_type IN ('click', 'lp_click')
 			 GROUP BY id
 			 FORMAT JSONEachRow`,
 			app.clickhouseDatabase,
 			teamFilter,
+			destinationWhere,
 		),
 	)
 	if err != nil {
