@@ -268,6 +268,7 @@ func Run() {
 	mux.HandleFunc("GET /up", app.health)
 	mux.HandleFunc("GET /api/domain-access", app.domainAccess)
 	mux.HandleFunc("GET /api/admin-access-check", app.adminAccessCheck)
+	mux.HandleFunc("GET /api/preview", app.preview)
 	mux.HandleFunc("POST /api/auth/login", app.login)
 	mux.HandleFunc("POST /api/auth/logout", app.auth(app.logout))
 	mux.HandleFunc("GET /api/auth/me", app.auth(app.me))

@@ -1,8 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getAuthToken } from "@/lib/auth-token";
 import { usePageTitle } from "@/lib/page-title";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api";
@@ -15,7 +13,6 @@ type PreviewRecord = {
 };
 
 export default function PreviewPage() {
-  const router = useRouter();
   const [previewURL, setPreviewURL] = useState("");
   const [previewError, setPreviewError] = useState("");
   usePageTitle("Preview");
@@ -31,17 +28,9 @@ export default function PreviewPage() {
         return;
       }
 
-      const token = getAuthToken();
-      if (!token) {
-        router.replace("/login");
-        return;
-      }
-
-      const path = object === "landings.preview" ? `/landings/${id}` : `/offers/${id}`;
-      void fetch(`${API_URL}${path}`, {
+      void fetch(`${API_URL}/preview?object=${encodeURIComponent(object)}&id=${encodeURIComponent(id)}`, {
         headers: {
           Accept: "application/json",
-          Authorization: `Bearer ${token}`,
         },
       })
         .then(async (response) => {
@@ -67,7 +56,7 @@ export default function PreviewPage() {
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [router]);
+  }, []);
 
   if (previewError) {
     return (

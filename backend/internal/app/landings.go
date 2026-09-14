@@ -782,6 +782,53 @@ func previewObjectURL(object string, id int64) string {
 	return "/preview?object=" + url.QueryEscape(object) + "&id=" + strconv.FormatInt(id, 10)
 }
 
+func (app *App) preview(w http.ResponseWriter, r *http.Request) {
+	if !app.adminAccessAllowed(r) {
+		writeError(w, http.StatusForbidden, "Preview is disabled for this domain")
+		return
+	}
+
+	id, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("id")), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "Invalid preview id")
+		return
+	}
+
+	switch r.URL.Query().Get("object") {
+	case "landings.preview":
+		var record struct {
+			URL string `json:"url"`
+		}
+		err := app.db.QueryRow(
+			r.Context(),
+			"SELECT COALESCE(NULLIF(url, ''), '/lander/' || local_path || '/') FROM landings WHERE id = $1 AND status IN ('active', 'paused')",
+			id,
+		).Scan(&record.URL)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "Preview not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, record)
+	case "offers.preview":
+		var record struct {
+			URL       string `json:"url"`
+			OfferType string `json:"offer_type"`
+		}
+		err := app.db.QueryRow(
+			r.Context(),
+			"SELECT COALESCE(NULLIF(url, ''), '/lander/' || local_path || '/'), COALESCE(NULLIF(offer_type, ''), 'redirect') FROM offers WHERE id = $1 AND status IN ('active', 'paused')",
+			id,
+		).Scan(&record.URL, &record.OfferType)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "Preview not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, record)
+	default:
+		writeError(w, http.StatusBadRequest, "Invalid preview object")
+	}
+}
+
 func editableLandingFile(path string) bool {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".html", ".htm", ".php", ".css", ".js", ".json", ".txt", ".md", ".log":
