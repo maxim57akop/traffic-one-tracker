@@ -161,9 +161,8 @@ function LandingPagesManagement() {
         (acc, landing) => ({
           clicks: acc.clicks + (landing.clicks ?? 0),
           lpClicks: acc.lpClicks + (landing.lp_clicks ?? 0),
-          files: acc.files + landing.files_count,
         }),
-        { clicks: 0, lpClicks: 0, files: 0 },
+        { clicks: 0, lpClicks: 0 },
       ),
     [filteredLandings],
   );
@@ -520,7 +519,7 @@ function LandingPagesManagement() {
               <td className="h-10 px-3" />
               <td className="h-10 px-3" />
               <td className="h-10 px-3" />
-              <td className="h-10 px-3">{totals.files} {t("landing.files")}</td>
+              <td className="h-10 px-3" />
               <td className="h-10 px-3">{totals.clicks}</td>
               <td className="h-10 px-3">{totals.lpClicks}</td>
               <td className="h-10 px-3">{formatPercent(totals.lpClicks, totals.clicks)}</td>
