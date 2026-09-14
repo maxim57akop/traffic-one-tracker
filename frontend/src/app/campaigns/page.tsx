@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Settings,
   Star,
+  Trash2,
   X,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
@@ -196,7 +197,13 @@ const copy = {
     campaignCreated: "Campaign created",
     campaignSaved: "Campaign saved",
     compileStarted: "Campaign compiled",
+    action: "Action",
+    addLandingPages: "Add landing pages",
+    addOffers: "Add offers",
+    afterClick: "After Click",
+    beforeClick: "Before Click",
     destination: "Destination",
+    directUrl: "Direct URL",
     domain: "Domain",
     emptyFlows: "There are no flows yet.",
     flowName: "Flow name",
@@ -208,9 +215,13 @@ const copy = {
     group: "Group",
     linkCopied: "Link copied",
     linkCopyFailed: "Could not copy link",
+    landingPages: "Landing pages",
+    landingPagesOffers: "Landing pages & offers",
     monitoring: "Monitoring",
     noCampaigns: "No campaigns yet.",
     notes: "Notes",
+    offerSelection: "Offer selection",
+    offers: "Offers",
     parameters: "Parameters",
     profit: "Profit/Loss",
     revenue: "Revenue",
@@ -241,7 +252,13 @@ const copy = {
     campaignCreated: "Кампания создана",
     campaignSaved: "Кампания сохранена",
     compileStarted: "Кампания скомпилирована",
+    action: "Действие",
+    addLandingPages: "Добавить лендинги",
+    addOffers: "Добавить офферы",
+    afterClick: "После клика",
+    beforeClick: "До клика",
     destination: "Назначение",
+    directUrl: "Прямая ссылка",
     domain: "Домен",
     emptyFlows: "Потоков пока нет.",
     flowName: "Название flow",
@@ -253,9 +270,13 @@ const copy = {
     group: "Группа",
     linkCopied: "Ссылка скопирована",
     linkCopyFailed: "Не удалось скопировать ссылку",
+    landingPages: "Лендинги",
+    landingPagesOffers: "Лендинги и офферы",
     monitoring: "Мониторинг",
     noCampaigns: "Кампаний пока нет.",
     notes: "Заметки",
+    offerSelection: "Выбор оффера",
+    offers: "Офферы",
     parameters: "Параметры",
     profit: "Прибыль/Убыток",
     revenue: "Доход",
@@ -286,7 +307,13 @@ const copy = {
     campaignCreated: "Кампанію створено",
     campaignSaved: "Кампанію збережено",
     compileStarted: "Кампанію скомпільовано",
+    action: "Дія",
+    addLandingPages: "Додати лендинги",
+    addOffers: "Додати офери",
+    afterClick: "Після кліку",
+    beforeClick: "До кліку",
     destination: "Призначення",
+    directUrl: "Пряме посилання",
     domain: "Домен",
     emptyFlows: "Потоків поки немає.",
     flowName: "Назва flow",
@@ -298,9 +325,13 @@ const copy = {
     group: "Група",
     linkCopied: "Посилання скопійовано",
     linkCopyFailed: "Не вдалося скопіювати посилання",
+    landingPages: "Лендинги",
+    landingPagesOffers: "Лендинги та офери",
     monitoring: "Моніторинг",
     noCampaigns: "Кампаній поки немає.",
     notes: "Нотатки",
+    offerSelection: "Вибір офера",
+    offers: "Офери",
     parameters: "Параметри",
     profit: "Прибуток/Збиток",
     revenue: "Дохід",
@@ -637,7 +668,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
   function openEditFlow(flow: Flow) {
     setEditingFlow(flow);
     setFlowForm(flowToForm(flow, streams, destinations));
-    setFlowTab("main");
+    setFlowTab("schema");
     setError("");
     setFlowModalOpen(true);
   }
@@ -1373,56 +1404,238 @@ function FlowSchemaTab({
   landings: Landing[];
   setForm: Dispatch<SetStateAction<FlowForm>>;
 }) {
+  const selectedOffer = form.destinationType === "offer" ? offers.find((offer) => String(offer.id) === form.destinationId) : undefined;
+  const selectedLanding =
+    form.destinationType === "landing" ? landings.find((landing) => String(landing.id) === form.destinationId) : undefined;
+  const destinationEnabled = form.status === "active";
+
+  function selectDestination(destinationType: Exclude<DestinationType, "url">, destinationId: number) {
+    setForm((current) => ({
+      ...current,
+      destinationType,
+      destinationId: String(destinationId),
+      url: "",
+    }));
+  }
+
+  function clearDestination(destinationType: Exclude<DestinationType, "url">) {
+    setForm((current) =>
+      current.destinationType === destinationType
+        ? {
+            ...current,
+            destinationId: "",
+          }
+        : current,
+    );
+  }
+
   return (
-    <div className="space-y-5">
-      <RadioGroup
-        label={c.destination}
-        name="destination-type"
-        value={form.destinationType}
-        options={[
-          ["offer", "Offer"],
-          ["landing", "Landing"],
-          ["url", "URL"],
-        ]}
-        onChange={(value) => setForm((current) => ({ ...current, destinationType: value as DestinationType, destinationId: "", url: "" }))}
-      />
-      {form.destinationType === "offer" ? (
-        <Field label="Offer">
-          <Select value={form.destinationId} onChange={(event) => setForm((current) => ({ ...current, destinationId: event.target.value }))}>
-            <option value="">Select offer</option>
-            {offers.map((offer) => (
-              <option key={offer.id} value={offer.id}>
-                {offer.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      ) : null}
-      {form.destinationType === "landing" ? (
-        <Field label="Landing">
-          <Select value={form.destinationId} onChange={(event) => setForm((current) => ({ ...current, destinationId: event.target.value }))}>
-            <option value="">Select landing</option>
-            {landings.map((landing) => (
-              <option key={landing.id} value={landing.id}>
-                {landing.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      ) : null}
+    <div className="space-y-9">
+      <div className="flex flex-wrap items-center gap-8">
+        <FlowModeRadio
+          checked={form.destinationType !== "url"}
+          label={c.landingPagesOffers}
+          name="destination-type"
+          onChange={() =>
+            setForm((current) => ({
+              ...current,
+              destinationType: current.destinationType === "landing" ? "landing" : "offer",
+              url: "",
+            }))
+          }
+        />
+        <FlowModeRadio
+          checked={form.destinationType === "url"}
+          label={c.directUrl}
+          name="destination-type"
+          onChange={() => setForm((current) => ({ ...current, destinationType: "url", destinationId: "" }))}
+        />
+        <FlowModeRadio checked={false} disabled label={c.action} name="destination-type" onChange={() => undefined} />
+      </div>
+
       {form.destinationType === "url" ? (
-        <Field label="URL">
+        <Field label={c.directUrl}>
           <Input value={form.url} onChange={(event) => setForm((current) => ({ ...current, url: event.target.value }))} />
         </Field>
       ) : null}
-      <Field label="Weight">
+
+      {form.destinationType !== "url" ? (
+        <div className="space-y-8">
+          <section className="space-y-4">
+            <h3 className="text-xl font-semibold">{c.landingPages}</h3>
+            {selectedLanding ? (
+              <DestinationRow
+                id={selectedLanding.id}
+                name={selectedLanding.name}
+                enabled={destinationEnabled}
+                weight={form.weight}
+                onDelete={() => clearDestination("landing")}
+                onToggle={() =>
+                  setForm((current) => ({
+                    ...current,
+                    status: current.status === "active" ? "paused" : "active",
+                  }))
+                }
+                onWeightChange={(weight) => setForm((current) => ({ ...current, weight }))}
+              />
+            ) : null}
+            <AddDestinationSelect
+              label={c.addLandingPages}
+              items={landings}
+              onSelect={(landingId) => selectDestination("landing", landingId)}
+            />
+          </section>
+
+          <section className="space-y-4">
+            <h3 className="text-xl font-semibold">{c.offers}</h3>
+            {selectedOffer ? (
+              <DestinationRow
+                id={selectedOffer.id}
+                name={selectedOffer.name}
+                enabled={destinationEnabled}
+                weight={form.weight}
+                onDelete={() => clearDestination("offer")}
+                onToggle={() =>
+                  setForm((current) => ({
+                    ...current,
+                    status: current.status === "active" ? "paused" : "active",
+                  }))
+                }
+                onWeightChange={(weight) => setForm((current) => ({ ...current, weight }))}
+              />
+            ) : null}
+            <AddDestinationSelect label={c.addOffers} items={offers} onSelect={(offerId) => selectDestination("offer", offerId)} />
+          </section>
+
+          <section className="space-y-3">
+            <h3 className="text-xl font-semibold">{c.offerSelection}</h3>
+            <div className="flex flex-wrap gap-8">
+              <FlowModeRadio checked label={c.beforeClick} name="offer-selection" onChange={() => undefined} />
+              <FlowModeRadio checked={false} label={c.afterClick} name="offer-selection" onChange={() => undefined} />
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function FlowModeRadio({
+  checked,
+  disabled = false,
+  label,
+  name,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  label: string;
+  name: string;
+  onChange: () => void;
+}) {
+  return (
+    <label className={`flex items-center gap-3 text-lg font-semibold ${disabled ? "text-muted-foreground" : "cursor-pointer"}`}>
+      <input className="peer sr-only" checked={checked} disabled={disabled} name={name} type="radio" onChange={onChange} />
+      <span
+        className={`flex size-5 items-center justify-center rounded-full border-2 ${
+          checked ? "border-blue-500" : "border-neutral-300"
+        } ${disabled ? "opacity-60" : ""}`}
+      >
+        {checked ? <span className="size-2 rounded-full bg-blue-500" /> : null}
+      </span>
+      {label}
+    </label>
+  );
+}
+
+function AddDestinationSelect({
+  label,
+  items,
+  onSelect,
+}: {
+  label: string;
+  items: Array<{ id: number; name: string }>;
+  onSelect: (id: number) => void;
+}) {
+  return (
+    <div className="relative inline-flex h-10 min-w-48 overflow-hidden rounded-md border bg-neutral-50 text-sm font-medium dark:border-neutral-800 dark:bg-neutral-900">
+      <select
+        aria-label={label}
+        className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
+        disabled={items.length === 0}
+        value=""
+        onChange={(event) => {
+          const id = Number(event.target.value);
+          if (id) {
+            onSelect(id);
+          }
+        }}
+      >
+        <option value="">{label}</option>
+        {items.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.name}
+          </option>
+        ))}
+      </select>
+      <span className="flex items-center px-3">{label}</span>
+      <span className="ml-auto flex w-10 items-center justify-center border-l dark:border-neutral-800">
+        <ChevronDown className="size-4" />
+      </span>
+    </div>
+  );
+}
+
+function DestinationRow({
+  id,
+  name,
+  enabled,
+  weight,
+  onDelete,
+  onToggle,
+  onWeightChange,
+}: {
+  id: number;
+  name: string;
+  enabled: boolean;
+  weight: string;
+  onDelete: () => void;
+  onToggle: () => void;
+  onWeightChange: (weight: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-4">
+      <button className="text-left text-lg font-semibold text-blue-500 hover:underline" type="button">
+        {name}
+      </button>
+      <div className="flex h-10 overflow-hidden rounded-md border dark:border-neutral-800">
         <Input
-          className="max-w-52"
+          className="h-full w-20 rounded-none border-0 text-right text-base focus:ring-0"
+          min="0"
           type="number"
-          value={form.weight}
-          onChange={(event) => setForm((current) => ({ ...current, weight: event.target.value }))}
+          value={weight}
+          onChange={(event) => onWeightChange(event.target.value)}
         />
-      </Field>
+        <span className="flex w-11 items-center justify-center border-l bg-neutral-50 text-sm text-muted-foreground dark:border-neutral-800 dark:bg-neutral-900">
+          %
+        </span>
+      </div>
+      <button
+        aria-label="Toggle destination"
+        className={`relative h-7 w-12 rounded-full transition-colors ${enabled ? "bg-green-500" : "bg-neutral-300"}`}
+        type="button"
+        onClick={onToggle}
+      >
+        <span
+          className={`absolute top-1 size-5 rounded-full bg-white shadow transition-transform ${
+            enabled ? "translate-x-5" : "translate-x-1"
+          }`}
+        />
+      </button>
+      <span className="text-lg font-semibold text-muted-foreground">#{id}</span>
+      <button className="text-red-500 hover:text-red-600" type="button" onClick={onDelete}>
+        <Trash2 className="size-5" />
+      </button>
     </div>
   );
 }
