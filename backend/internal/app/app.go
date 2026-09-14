@@ -266,6 +266,7 @@ func Run() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", app.health)
 	mux.HandleFunc("GET /up", app.health)
+	mux.HandleFunc("GET /api/domain-access", app.domainAccess)
 	mux.HandleFunc("POST /api/auth/login", app.login)
 	mux.HandleFunc("POST /api/auth/logout", app.auth(app.logout))
 	mux.HandleFunc("GET /api/auth/me", app.auth(app.me))
@@ -458,6 +459,11 @@ func (app *App) health(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (app *App) login(w http.ResponseWriter, r *http.Request) {
+	if !app.adminAccessAllowed(r) {
+		writeError(w, http.StatusForbidden, "Admin access is disabled for this domain")
+		return
+	}
+
 	var input struct {
 		Email         string `json:"email"`
 		Password      string `json:"password"`
@@ -1594,6 +1600,10 @@ func (app *App) deleteDomain(w http.ResponseWriter, r *http.Request, user User) 
 
 func (app *App) domainServerIP(w http.ResponseWriter, _ *http.Request, _ User) {
 	writeJSON(w, http.StatusOK, map[string]string{"server_ip": app.serverIP})
+}
+
+func (app *App) domainAccess(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]bool{"admin_access_allowed": app.adminAccessAllowed(r)})
 }
 
 type domainCreateInput struct {
@@ -4160,6 +4170,19 @@ func (app *App) domainByHostAnyStatus(ctx context.Context, host string) (Domain,
 		 WHERE d.domain = $1 AND d.status <> 'disabled'`,
 		host,
 	))
+}
+
+func (app *App) adminAccessAllowed(r *http.Request) bool {
+	host := requestHost(r)
+	if isLocalAdminHost(host) {
+		return true
+	}
+
+	domain, err := app.domainByHostAnyStatus(r.Context(), host)
+	if err != nil {
+		return true
+	}
+	return domain.AllowAdminAccess
 }
 
 func requestHost(r *http.Request) string {
