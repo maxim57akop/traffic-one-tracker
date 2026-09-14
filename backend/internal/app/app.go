@@ -3124,6 +3124,10 @@ func (app *App) trackerFallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if path == "" {
+		if previewObject := r.URL.Query().Get("object"); previewObject == "landings.preview" || previewObject == "offers.preview" {
+			http.Redirect(w, r, "/preview?"+r.URL.RawQuery, http.StatusFound)
+			return
+		}
 		if domain != nil && domain.IndexCampaignSlug != nil {
 			app.redirectSlug(w, r, *domain.IndexCampaignSlug)
 			return

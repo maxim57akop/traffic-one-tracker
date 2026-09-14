@@ -741,7 +741,7 @@ func landingURL(localPath string) string {
 }
 
 func previewObjectURL(object string, id int64) string {
-	return "/?object=" + url.QueryEscape(object) + "&id=" + strconv.FormatInt(id, 10)
+	return "/preview?object=" + url.QueryEscape(object) + "&id=" + strconv.FormatInt(id, 10)
 }
 
 func editableLandingFile(path string) bool {
