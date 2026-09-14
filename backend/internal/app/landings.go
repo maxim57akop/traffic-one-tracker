@@ -358,7 +358,7 @@ func (app *App) serveLandingURL(w http.ResponseWriter, r *http.Request, rawURL s
 	if err != nil || parsed.IsAbs() || !strings.HasPrefix(parsed.Path, "/lander/") {
 		return false
 	}
-	app.serveLandingPath(w, r, strings.TrimPrefix(parsed.Path, "/lander/"))
+	http.Redirect(w, r, rawURL, http.StatusFound)
 	return true
 }
 
@@ -393,44 +393,7 @@ func (app *App) serveLandingPath(w http.ResponseWriter, r *http.Request, path st
 		return
 	}
 
-	app.serveLandingFile(w, r, filePath)
-}
-
-func (app *App) serveLandingFile(w http.ResponseWriter, r *http.Request, filePath string) {
-	if strings.EqualFold(filepath.Ext(filePath), ".php") {
-		content, err := os.ReadFile(filePath)
-		if err != nil {
-			writeError(w, http.StatusNotFound, "File not found")
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write(stripPHPBlocks(content))
-		return
-	}
-
 	http.ServeFile(w, r, filePath)
-}
-
-func stripPHPBlocks(content []byte) []byte {
-	source := string(content)
-	var builder strings.Builder
-
-	for {
-		start := strings.Index(source, "<?")
-		if start < 0 {
-			builder.WriteString(source)
-			break
-		}
-		builder.WriteString(source[:start])
-		rest := source[start+2:]
-		end := strings.Index(rest, "?>")
-		if end < 0 {
-			break
-		}
-		source = rest[end+2:]
-	}
-
-	return []byte(builder.String())
 }
 
 func (app *App) scanLanding(row scanner) (Landing, error) {
