@@ -341,6 +341,8 @@ func Run() {
 	mux.HandleFunc("PATCH /api/flows/{id}", app.auth(app.updateFlow))
 	mux.HandleFunc("GET /api/flow-filters", app.auth(app.flowFilters))
 	mux.HandleFunc("POST /api/flow-filters", app.auth(app.createFlowFilter))
+	mux.HandleFunc("PATCH /api/flow-filters/{id}", app.auth(app.updateFlowFilter))
+	mux.HandleFunc("DELETE /api/flow-filters/{id}", app.auth(app.deleteFlowFilter))
 	mux.HandleFunc("GET /api/streams", app.auth(app.streams))
 	mux.HandleFunc("POST /api/streams", app.auth(app.createStream))
 	mux.HandleFunc("GET /api/stream-destinations", app.auth(app.streamDestinations))
@@ -2081,6 +2083,70 @@ func (app *App) createFlowFilter(w http.ResponseWriter, r *http.Request, user Us
 	}
 	_ = json.Unmarshal(raw, &item.Values)
 	writeJSON(w, http.StatusCreated, item)
+}
+
+func (app *App) updateFlowFilter(w http.ResponseWriter, r *http.Request, user User) {
+	filterID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || filterID <= 0 {
+		writeError(w, http.StatusBadRequest, "Invalid flow filter id")
+		return
+	}
+
+	var input struct {
+		Type     string   `json:"type"`
+		Operator string   `json:"operator"`
+		Values   []string `json:"values"`
+		Position int      `json:"position"`
+		Status   string   `json:"status"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if input.Operator == "" {
+		input.Operator = "in"
+	}
+	if input.Status == "" {
+		input.Status = "active"
+	}
+	if !app.ownsFlowFilter(r.Context(), user.TeamID, filterID) {
+		writeError(w, http.StatusNotFound, "Flow filter not found")
+		return
+	}
+
+	values, _ := json.Marshal(input.Values)
+	var item FlowFilter
+	var raw []byte
+	err = app.db.QueryRow(
+		r.Context(),
+		`UPDATE flow_filters
+		 SET type = $2, operator = $3, values = $4, position = $5, status = $6
+		 WHERE id = $1
+		 RETURNING id, flow_id, type, operator, values, position, status`,
+		filterID, strings.TrimSpace(input.Type), input.Operator, values, input.Position, input.Status,
+	).Scan(&item.ID, &item.FlowID, &item.Type, &item.Operator, &raw, &item.Position, &item.Status)
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	_ = json.Unmarshal(raw, &item.Values)
+	writeJSON(w, http.StatusOK, item)
+}
+
+func (app *App) deleteFlowFilter(w http.ResponseWriter, r *http.Request, user User) {
+	filterID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || filterID <= 0 {
+		writeError(w, http.StatusBadRequest, "Invalid flow filter id")
+		return
+	}
+	if !app.ownsFlowFilter(r.Context(), user.TeamID, filterID) {
+		writeError(w, http.StatusNotFound, "Flow filter not found")
+		return
+	}
+	if _, err := app.db.Exec(r.Context(), "DELETE FROM flow_filters WHERE id = $1", filterID); err != nil {
+		writeDBError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *App) streams(w http.ResponseWriter, r *http.Request, user User) {
@@ -3989,6 +4055,17 @@ func (app *App) ownsFlow(ctx context.Context, teamID, flowID int64) bool {
 		SELECT 1 FROM flows f JOIN campaigns c ON c.id = f.campaign_id
 		WHERE f.id = $1 AND c.team_id = $2
 	)`, flowID, teamID).Scan(&exists)
+	return exists
+}
+
+func (app *App) ownsFlowFilter(ctx context.Context, teamID, filterID int64) bool {
+	var exists bool
+	_ = app.db.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM flow_filters ff
+		JOIN flows f ON f.id = ff.flow_id
+		JOIN campaigns c ON c.id = f.campaign_id
+		WHERE ff.id = $1 AND c.team_id = $2
+	)`, filterID, teamID).Scan(&exists)
 	return exists
 }
 

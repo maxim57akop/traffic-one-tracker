@@ -111,6 +111,25 @@ type Flow = {
   bots: number;
 };
 
+type FlowFilter = {
+  id: number;
+  flow_id: number;
+  type: string;
+  operator: "in" | "not_in";
+  values: string[];
+  position: number;
+  status: "active" | "paused";
+};
+
+type FlowFilterForm = {
+  id?: number;
+  localId: string;
+  type: string;
+  operator: "in" | "not_in";
+  values: string[];
+  status: "active" | "paused";
+};
+
 type Stream = {
   id: number;
   flow_id: number;
@@ -175,6 +194,7 @@ type FlowForm = {
   url: string;
   weight: string;
   urlStatus: "active" | "paused";
+  filters: FlowFilterForm[];
   notes: string;
 };
 
@@ -239,6 +259,16 @@ const filterMenuGroups = [
     items: ["Uniqueness", "Bot", "Browser", "Browser version", "Device model", "Device type", "OS", "OS version", "User agent", "Language"],
   },
 ];
+
+function createFlowFilterDraft(type = "Country"): FlowFilterForm {
+  return {
+    localId: `filter_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+    type,
+    operator: type === "Country" ? "not_in" : "in",
+    values: type === "Country" ? [...fbExcludedCountries] : [],
+    status: "active",
+  };
+}
 
 const copy = {
   en: {
@@ -447,6 +477,7 @@ const emptyFlowForm: FlowForm = {
   url: "",
   weight: "100",
   urlStatus: "active",
+  filters: [createFlowFilterDraft("Country")],
   notes: "",
 };
 
@@ -493,6 +524,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
   const [offers, setOffers] = useState<Offer[]>([]);
   const [landings, setLandings] = useState<Landing[]>([]);
   const [flows, setFlows] = useState<Flow[]>([]);
+  const [flowFilters, setFlowFilters] = useState<FlowFilter[]>([]);
   const [streams, setStreams] = useState<Stream[]>([]);
   const [destinations, setDestinations] = useState<StreamDestination[]>([]);
   const [campaignStats, setCampaignStats] = useState<Record<number, CampaignStats>>({});
@@ -557,7 +589,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
     setError("");
     setLoading(true);
     try {
-      const [campaignData, domainData, sourceData, offerData, landingData, flowData, streamData, destinationData, statsData] =
+      const [campaignData, domainData, sourceData, offerData, landingData, flowData, filterData, streamData, destinationData, statsData] =
         await Promise.all([
           apiRequest<Campaign[]>("/campaigns"),
           apiRequest<Domain[]>("/domains"),
@@ -565,6 +597,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
           apiRequest<Offer[]>("/offers"),
           apiRequest<Landing[]>("/landings"),
           apiRequest<Flow[]>("/flows"),
+          apiRequest<FlowFilter[]>("/flow-filters"),
           apiRequest<Stream[]>("/streams"),
           apiRequest<StreamDestination[]>("/stream-destinations"),
           apiRequest<CampaignStats[]>(`/campaigns/stats?date=${dateFilter}`),
@@ -575,6 +608,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
       setOffers(offerData);
       setLandings(landingData);
       setFlows(flowData);
+      setFlowFilters(filterData);
       setStreams(streamData);
       setDestinations(destinationData);
       setCampaignStats(Object.fromEntries(statsData.map((item) => [item.campaign_id, item])));
@@ -727,6 +761,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
       ...emptyFlowForm,
       name: `Flow ${selectedFlows.length + 1}`,
       position: String(selectedFlows.length + 1),
+      filters: [createFlowFilterDraft("Country")],
     });
     setEditingFlow(null);
     setFlowTab("main");
@@ -736,8 +771,8 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
 
   function openEditFlow(flow: Flow) {
     setEditingFlow(flow);
-    setFlowForm(flowToForm(flow, streams, destinations));
-    setFlowTab("schema");
+    setFlowForm(flowToForm(flow, streams, destinations, flowFilters));
+    setFlowTab("filters");
     setError("");
     setFlowModalOpen(true);
   }
@@ -775,8 +810,10 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
           body: JSON.stringify(flowPayload(flowForm, selectedFlows.length + 1)),
         });
         const { stream, destinations: savedDestinations } = await saveFlowDestinations(flow, flowForm, streams, destinations);
+        const savedFilters = await syncFlowFilters(flow.id, flowForm.filters, flowFilters);
 
         setFlows((items) => items.map((item) => (item.id === flow.id ? flow : item)));
+        setFlowFilters((items) => replaceFlowFilters(items, flow.id, savedFilters));
         if (stream) {
           setStreams((items) => (items.some((item) => item.id === stream.id) ? items : [...items, stream]));
         }
@@ -811,8 +848,10 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
         }),
       });
       const { destinations: savedDestinations } = await saveFlowDestinations(flow, flowForm, [stream], []);
+      const savedFilters = await syncFlowFilters(flow.id, flowForm.filters, []);
 
       setFlows((items) => [...items, flow]);
+      setFlowFilters((items) => replaceFlowFilters(items, flow.id, savedFilters));
       setStreams((items) => [...items, stream]);
       setDestinations((items) => [...items, ...savedDestinations]);
       await apiRequest(`/campaigns/${selectedCampaign.id}/compile`, { method: "POST" });
@@ -944,6 +983,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
                       <tbody>
                         {selectedFlows.map((flow) => {
                           const destination = flowDestinationDetails(flow.id, streams, destinations, offers, landings);
+                          const filterSummaries = flowFilterSummaries(flowFiltersForFlow(flow.id, flowFilters));
                           return (
                             <tr key={flow.id} className="align-top">
                               <td className="px-2 py-3 text-neutral-400">
@@ -968,12 +1008,18 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
                                   </button>
                                   <Star className="size-4 text-neutral-400" />
                                 </div>
-                                <div className="mt-3 pl-8 text-base font-normal text-neutral-950 dark:text-neutral-50">
-                                  Filters
-                                </div>
-                                <div className="mt-1.5 max-w-md pl-12 text-sm leading-6 text-red-500">
-                                  {flowFilterSummary()}
-                                </div>
+                                {filterSummaries.length > 0 ? (
+                                  <>
+                                    <div className="mt-3 pl-8 text-base font-normal text-neutral-950 dark:text-neutral-50">
+                                      Filters
+                                    </div>
+                                    <div className="mt-1.5 max-w-md space-y-1 pl-12 text-sm leading-6 text-red-500">
+                                      {filterSummaries.map((summary) => (
+                                        <div key={summary}>{summary}</div>
+                                      ))}
+                                    </div>
+                                  </>
+                                ) : null}
                                 <div className="mt-3 pl-8 text-base font-normal text-neutral-950 dark:text-neutral-50">
                                   {destination.kindLabel}
                                 </div>
@@ -1185,7 +1231,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
               {flowTab === "schema" ? (
                 <FlowSchemaTab c={c} form={flowForm} offers={offers} landings={landings} setForm={setFlowForm} />
               ) : null}
-              {flowTab === "filters" ? <FlowFiltersTab /> : null}
+              {flowTab === "filters" ? <FlowFiltersTab form={flowForm} setForm={setFlowForm} /> : null}
               {flowTab === "monitoring" ? (
                 <div className="text-sm text-muted-foreground">Monitoring soon.</div>
               ) : null}
@@ -1545,8 +1591,36 @@ function FlowSchemaTab({
   );
 }
 
-function FlowFiltersTab() {
+function FlowFiltersTab({
+  form,
+  setForm,
+}: {
+  form: FlowForm;
+  setForm: Dispatch<SetStateAction<FlowForm>>;
+}) {
   const [menuOpen, setMenuOpen] = useState(false);
+
+  function addFilter(type: string) {
+    setForm((current) => ({
+      ...current,
+      filters: [...current.filters, createFlowFilterDraft(type)],
+    }));
+    setMenuOpen(false);
+  }
+
+  function updateFilter(localId: string, patch: Partial<FlowFilterForm>) {
+    setForm((current) => ({
+      ...current,
+      filters: current.filters.map((filter) => (filter.localId === localId ? { ...filter, ...patch } : filter)),
+    }));
+  }
+
+  function removeFilter(localId: string) {
+    setForm((current) => ({
+      ...current,
+      filters: current.filters.filter((filter) => filter.localId !== localId),
+    }));
+  }
 
   return (
     <div className="space-y-8">
@@ -1571,7 +1645,7 @@ function FlowFiltersTab() {
                       item === "Country" ? "bg-neutral-100 dark:bg-neutral-900" : ""
                     }`}
                     type="button"
-                    onClick={() => setMenuOpen(false)}
+                    onClick={() => addFilter(item)}
                   >
                     {item}
                   </button>
@@ -1590,47 +1664,120 @@ function FlowFiltersTab() {
         </div>
       </section>
 
-      <section className="rounded-md bg-neutral-50 p-5 dark:bg-neutral-900">
-        <div className="flex items-center gap-3">
-          <span className="text-base font-normal text-neutral-950 dark:text-neutral-50">Country</span>
-          <div className="inline-flex overflow-hidden rounded-md border bg-white text-sm dark:border-neutral-800 dark:bg-neutral-950">
-            <button className="px-3 py-1.5 text-neutral-900 dark:text-neutral-100" type="button">
-              IS
-            </button>
-            <button className="bg-red-500 px-3 py-1.5 text-white" type="button">
-              IS NOT
-            </button>
-          </div>
-          <button className="ml-auto inline-flex items-center gap-2 text-sm text-red-500" type="button">
-            <Trash2 className="size-4" />
-            Remove
+      {form.filters.length === 0 ? (
+        <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+          No filters yet.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {form.filters.map((filter) => (
+            <FlowFilterCard
+              key={filter.localId}
+              filter={filter}
+              onChange={(patch) => updateFilter(filter.localId, patch)}
+              onRemove={() => removeFilter(filter.localId)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FlowFilterCard({
+  filter,
+  onChange,
+  onRemove,
+}: {
+  filter: FlowFilterForm;
+  onChange: (patch: Partial<FlowFilterForm>) => void;
+  onRemove: () => void;
+}) {
+  const [valueDraft, setValueDraft] = useState("");
+
+  function addValue() {
+    const value = valueDraft.trim();
+    if (!value || filter.values.includes(value)) {
+      setValueDraft("");
+      return;
+    }
+    onChange({ values: [...filter.values, value] });
+    setValueDraft("");
+  }
+
+  function removeValue(value: string) {
+    onChange({ values: filter.values.filter((item) => item !== value) });
+  }
+
+  return (
+    <section className="rounded-md bg-neutral-50 p-5 dark:bg-neutral-900">
+      <div className="flex items-center gap-3">
+        <span className="text-base font-normal text-neutral-950 dark:text-neutral-50">{filter.type}</span>
+        <div className="inline-flex overflow-hidden rounded-md border bg-white text-sm dark:border-neutral-800 dark:bg-neutral-950">
+          <button
+            className={`px-3 py-1.5 ${filter.operator === "in" ? "bg-blue-500 text-white" : "text-neutral-900 dark:text-neutral-100"}`}
+            type="button"
+            onClick={() => onChange({ operator: "in" })}
+          >
+            IS
+          </button>
+          <button
+            className={`px-3 py-1.5 ${filter.operator === "not_in" ? "bg-red-500 text-white" : "text-neutral-900 dark:text-neutral-100"}`}
+            type="button"
+            onClick={() => onChange({ operator: "not_in" })}
+          >
+            IS NOT
           </button>
         </div>
+        <button className="ml-auto inline-flex items-center gap-2 text-sm text-red-500" type="button" onClick={onRemove}>
+          <Trash2 className="size-4" />
+          Remove
+        </button>
+      </div>
 
-        <div className="mt-4 min-h-32 rounded-md border bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950">
-          <div className="flex flex-wrap gap-2">
-            {fbExcludedCountries.map((country) => (
-              <span key={country} className="inline-flex items-center gap-2 bg-neutral-100 px-2.5 py-1.5 text-sm text-neutral-950 dark:bg-neutral-800 dark:text-neutral-50">
-                {country}
-                <button className="text-neutral-700 dark:text-neutral-300" type="button" aria-label={`Remove ${country}`}>
-                  x
-                </button>
-              </span>
-            ))}
-          </div>
-          <div className="mt-3 flex justify-end gap-4 text-neutral-400">
+      <div className="mt-4 min-h-32 rounded-md border bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950">
+        <div className="flex flex-wrap gap-2">
+          {filter.values.map((value) => (
+            <span key={value} className="inline-flex items-center gap-2 bg-neutral-100 px-2.5 py-1.5 text-sm text-neutral-950 dark:bg-neutral-800 dark:text-neutral-50">
+              {value || "Empty"}
+              <button className="text-neutral-700 dark:text-neutral-300" type="button" aria-label={`Remove ${value}`} onClick={() => removeValue(value)}>
+                x
+              </button>
+            </span>
+          ))}
+        </div>
+        <div className="mt-3 flex items-center gap-2">
+          <Input
+            className="h-9 max-w-xs"
+            placeholder={`Add ${filter.type.toLowerCase()}`}
+            value={valueDraft}
+            onChange={(event) => setValueDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                addValue();
+              }
+            }}
+          />
+          <Button variant="outline" type="button" onClick={addValue}>
+            Add
+          </Button>
+          <button className="ml-auto text-neutral-400" type="button" aria-label="Clear values" onClick={() => onChange({ values: [] })}>
             <X className="size-5" />
-            <ChevronDown className="size-5" />
-          </div>
+          </button>
         </div>
+      </div>
 
-        <div className="mt-3 flex flex-wrap gap-6 text-sm text-blue-500">
-          <button type="button">Switch to textarea</button>
-          <button type="button">Include Empty</button>
-          <button type="button">Insert from a list</button>
-        </div>
-      </section>
-    </div>
+      <div className="mt-3 flex flex-wrap gap-6 text-sm text-blue-500">
+        <button type="button">Switch to textarea</button>
+        <button type="button" onClick={() => onChange({ values: Array.from(new Set([...filter.values, ""])) })}>
+          Include Empty
+        </button>
+        <button type="button" onClick={() => onChange({ values: filter.type === "Country" ? [...fbExcludedCountries] : filter.values })}>
+          Insert from a list
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -1969,13 +2116,14 @@ function flowCount(campaignId: number, flows: Flow[]) {
   return flows.filter((flow) => flow.campaign_id === campaignId).length;
 }
 
-function flowToForm(flow: Flow, streams: Stream[], destinations: StreamDestination[]): FlowForm {
+function flowToForm(flow: Flow, streams: Stream[], destinations: StreamDestination[], filters: FlowFilter[]): FlowForm {
   const stream = streams.find((item) => item.flow_id === flow.id);
   const flowDestinations = stream ? destinations.filter((item) => item.stream_id === stream.id) : [];
   const landingDestination = flowDestinations.find((item) => item.destination_type === "landing");
   const offerDestination = flowDestinations.find((item) => item.destination_type === "offer");
   const urlDestination = flowDestinations.find((item) => item.destination_type === "url");
   const primaryDestination = urlDestination ?? landingDestination ?? offerDestination;
+  const flowFilters = flowFiltersForFlow(flow.id, filters);
 
   return {
     name: flow.name,
@@ -1994,6 +2142,7 @@ function flowToForm(flow: Flow, streams: Stream[], destinations: StreamDestinati
     url: urlDestination?.url ?? "",
     weight: String(urlDestination?.weight ?? primaryDestination?.weight ?? 100),
     urlStatus: urlDestination?.status ?? "active",
+    filters: flowFilters.map(filterToForm),
     notes: flow.notes ?? "",
   };
 }
@@ -2121,6 +2270,56 @@ async function pauseStreamDestination(destination: StreamDestination) {
   });
 }
 
+async function syncFlowFilters(flowId: number, formFilters: FlowFilterForm[], existingFilters: FlowFilter[]) {
+  const existing = flowFiltersForFlow(flowId, existingFilters);
+  const saved: FlowFilter[] = [];
+  const keptIds = new Set(formFilters.map((filter) => filter.id).filter((id): id is number => Boolean(id)));
+
+  for (const filter of existing) {
+    if (!keptIds.has(filter.id)) {
+      await apiRequest<void>(`/flow-filters/${filter.id}`, { method: "DELETE" });
+    }
+  }
+
+  for (const [index, filter] of formFilters.entries()) {
+    const payload = {
+      flow_id: flowId,
+      type: filter.type,
+      operator: filter.operator,
+      values: filter.values,
+      position: index + 1,
+      status: filter.status,
+    };
+    const savedFilter = filter.id
+      ? await apiRequest<FlowFilter>(`/flow-filters/${filter.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        })
+      : await apiRequest<FlowFilter>("/flow-filters", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+    saved.push(savedFilter);
+  }
+
+  return saved;
+}
+
+function replaceFlowFilters(items: FlowFilter[], flowId: number, filters: FlowFilter[]) {
+  return [...items.filter((item) => item.flow_id !== flowId), ...filters].sort((a, b) => a.position - b.position || a.id - b.id);
+}
+
+function filterToForm(filter: FlowFilter): FlowFilterForm {
+  return {
+    id: filter.id,
+    localId: `filter_${filter.id}`,
+    type: filter.type,
+    operator: filter.operator,
+    values: filter.values ?? [],
+    status: filter.status,
+  };
+}
+
 function statsForCampaign(campaignId: number, stats: Record<number, CampaignStats>): CampaignStats {
   return stats[campaignId] ?? {
     campaign_id: campaignId,
@@ -2214,8 +2413,18 @@ function flowDestinationDetails(
   return { kindLabel: "Landings", name: `[${destination.destination_id ?? "-"}] ${name}`, weight: destination.weight };
 }
 
-function flowFilterSummary() {
-  return `Country is not ${fbExcludedCountries.map((country) => `"${country}"`).join(", ")}`;
+function flowFiltersForFlow(flowId: number, filters: FlowFilter[]) {
+  return filters
+    .filter((filter) => filter.flow_id === flowId && filter.status === "active")
+    .sort((a, b) => a.position - b.position || a.id - b.id);
+}
+
+function flowFilterSummaries(filters: FlowFilter[]) {
+  return filters.map((filter) => {
+    const operator = filter.operator === "not_in" ? "is not" : "is";
+    const values = filter.values.map((value) => (value ? `"${value}"` : "Empty")).join(", ");
+    return `${filter.type} ${operator} ${values || "Empty"}`;
+  });
 }
 
 function uniqueSorted(values: Array<string | undefined>) {
