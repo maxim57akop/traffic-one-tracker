@@ -1,11 +1,14 @@
 package app
 
 import (
+	"archive/zip"
 	"context"
 	"errors"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -261,6 +264,126 @@ func (app *App) deleteOffer(w http.ResponseWriter, r *http.Request, user User) {
 		_ = os.RemoveAll(app.landingDir(offer.LocalPath))
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *App) offerFiles(w http.ResponseWriter, r *http.Request, user User) {
+	offer, ok := app.localOfferForFiles(w, r, user)
+	if !ok {
+		return
+	}
+
+	files, err := app.listLandingFiles(offer.LocalPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not load offer files")
+		return
+	}
+	writeJSON(w, http.StatusOK, files)
+}
+
+func (app *App) offerFileContent(w http.ResponseWriter, r *http.Request, user User) {
+	offer, ok := app.localOfferForFiles(w, r, user)
+	if !ok {
+		return
+	}
+
+	filePath, err := app.resolveLandingFile(offer.LocalPath, r.URL.Query().Get("path"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid file path")
+		return
+	}
+	if !editableLandingFile(filePath) {
+		writeError(w, http.StatusUnsupportedMediaType, "File is not editable")
+		return
+	}
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "File not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"content": string(content)})
+}
+
+func (app *App) updateOfferFileContent(w http.ResponseWriter, r *http.Request, user User) {
+	offer, ok := app.localOfferForFiles(w, r, user)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+
+	filePath, err := app.resolveLandingFile(offer.LocalPath, input.Path)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid file path")
+		return
+	}
+	if !editableLandingFile(filePath) {
+		writeError(w, http.StatusUnsupportedMediaType, "File is not editable")
+		return
+	}
+	if err := os.WriteFile(filePath, []byte(input.Content), 0o644); err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not save file")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}
+
+func (app *App) downloadOffer(w http.ResponseWriter, r *http.Request, user User) {
+	offer, ok := app.localOfferForFiles(w, r, user)
+	if !ok {
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+offer.LocalPath+`.zip"`)
+
+	zipWriter := zip.NewWriter(w)
+	defer zipWriter.Close()
+
+	root := app.landingDir(offer.LocalPath)
+	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return nil
+		}
+		target, err := zipWriter.Create(filepath.ToSlash(relative))
+		if err != nil {
+			return nil
+		}
+		source, err := os.Open(path)
+		if err != nil {
+			return nil
+		}
+		defer source.Close()
+		_, _ = io.Copy(target, source)
+		return nil
+	})
+}
+
+func (app *App) localOfferForFiles(w http.ResponseWriter, r *http.Request, user User) (Offer, bool) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return Offer{}, false
+	}
+	offer, err := app.offerByID(r.Context(), user.TeamID, id)
+	if err != nil {
+		writeNotFoundOrDB(w, err)
+		return Offer{}, false
+	}
+	if offer.OfferType != "local" || offer.LocalPath == "" {
+		writeError(w, http.StatusUnprocessableEntity, "Offer has no local files")
+		return Offer{}, false
+	}
+	return offer, true
 }
 
 func normalizeOfferInput(input *offerInput) error {

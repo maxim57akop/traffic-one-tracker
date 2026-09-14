@@ -1,11 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
+  Code2,
+  Download,
   ExternalLink,
   FileText,
   Plus,
   RefreshCw,
+  Save,
   Settings,
   Trash2,
   Upload,
@@ -58,6 +62,14 @@ type Offer = {
   conversion_cap_enabled: boolean;
   daily_conversion_cap: number;
   notes?: string;
+};
+
+type OfferFile = {
+  path: string;
+  name: string;
+  size: number;
+  extension: string;
+  editable: boolean;
 };
 
 type OfferForm = {
@@ -157,9 +169,15 @@ function OffersManagement() {
   const [form, setForm] = useState<OfferForm>(emptyForm);
   const [editingOffer, setEditingOffer] = useState<Offer | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [codeOpen, setCodeOpen] = useState(false);
+  const [codeOffer, setCodeOffer] = useState<Offer | null>(null);
+  const [files, setFiles] = useState<OfferFile[]>([]);
+  const [selectedFile, setSelectedFile] = useState("");
+  const [fileContent, setFileContent] = useState("");
   const [activeTab, setActiveTab] = useState<OfferTab>("main");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [codeSaving, setCodeSaving] = useState(false);
   const [error, setError] = useState("");
 
   const groups = useMemo(() => uniqueSorted(offers.map((offer) => offer.group_name)), [offers]);
@@ -319,6 +337,76 @@ function OffersManagement() {
     }
   }
 
+  async function openCode(offer: Offer) {
+    setCodeOffer(offer);
+    setCodeOpen(true);
+    setFiles([]);
+    setSelectedFile("");
+    setFileContent("");
+    setError("");
+
+    try {
+      const offerFiles = await apiRequest<OfferFile[]>(`/offers/${offer.id}/files`);
+      setFiles(offerFiles);
+      const firstEditable =
+        offerFiles.find((file) => file.path === "index.html" && file.editable) ??
+        offerFiles.find((file) => file.editable);
+      if (firstEditable) {
+        await selectFile(offer, firstEditable.path);
+      }
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not open code");
+    }
+  }
+
+  async function selectFile(offer: Offer, path: string) {
+    setSelectedFile(path);
+    const data = await apiRequest<{ content: string }>(
+      `/offers/${offer.id}/files/content?path=${encodeURIComponent(path)}`,
+    );
+    setFileContent(data.content);
+  }
+
+  async function saveCode() {
+    if (!codeOffer || !selectedFile) {
+      return;
+    }
+
+    setCodeSaving(true);
+    setError("");
+    try {
+      await apiRequest(`/offers/${codeOffer.id}/files/content`, {
+        method: "PATCH",
+        body: JSON.stringify({ path: selectedFile, content: fileContent }),
+      });
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not save file");
+    } finally {
+      setCodeSaving(false);
+    }
+  }
+
+  async function downloadOffer(offer: Offer) {
+    const token = getAuthToken();
+    const response = await fetch(`${API_URL}/offers/${offer.id}/download`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!response.ok) {
+      setError("Could not download offer");
+      return;
+    }
+
+    const blob = await response.blob();
+    const href = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = `${offer.local_path || offer.name}.zip`;
+    link.click();
+    window.URL.revokeObjectURL(href);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -423,15 +511,25 @@ function OffersManagement() {
                   </td>
                   <td className="h-11 px-3 text-neutral-700">{offer.group_name ?? "-"}</td>
                   <td className="h-11 px-3">
-                    <Button aria-label={t("actions.preview")} size="icon-sm" title={t("actions.preview")} variant="ghost" onClick={() => previewOffer(offer)}>
-                      <ExternalLink className="h-4 w-4" />
-                    </Button>
-                    {offer.offer_type === "local" && (
-                      <span className="ml-1 inline-flex items-center gap-1 text-xs text-neutral-400">
-                        <FileText className="h-3.5 w-3.5" />
-                        {offer.files_count}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1">
+                      <IconAction label={t("actions.preview")} onClick={() => previewOffer(offer)}>
+                        <ExternalLink className="h-4 w-4" />
+                      </IconAction>
+                      {offer.offer_type === "local" && (
+                        <>
+                          <IconAction label={t("landing.code")} onClick={() => void openCode(offer)}>
+                            <Code2 className="h-4 w-4" />
+                          </IconAction>
+                          <IconAction label={t("actions.download")} onClick={() => void downloadOffer(offer)}>
+                            <Download className="h-4 w-4" />
+                          </IconAction>
+                          <span className="ml-1 inline-flex items-center gap-1 text-xs text-neutral-400">
+                            <FileText className="h-3.5 w-3.5" />
+                            {offer.files_count}
+                          </span>
+                        </>
+                      )}
+                    </div>
                   </td>
                   <td className="h-11 px-3 text-neutral-700">{countryLabel(countries, offer.country)}</td>
                   <td className="h-11 px-3 text-neutral-700">{offer.affiliate_network ?? "-"}</td>
@@ -497,6 +595,20 @@ function OffersManagement() {
           setForm={setForm}
           onClose={closeModal}
           onSave={() => void saveOffer()}
+        />
+      )}
+
+      {codeOpen && codeOffer && (
+        <OfferCodeEditor
+          content={fileContent}
+          files={files}
+          offer={codeOffer}
+          saving={codeSaving}
+          selectedFile={selectedFile}
+          setContent={setFileContent}
+          onClose={() => setCodeOpen(false)}
+          onSave={() => void saveCode()}
+          onSelectFile={(path) => void selectFile(codeOffer, path)}
         />
       )}
     </div>
@@ -708,6 +820,115 @@ function OfferNotesTab({ form, setForm }: { form: OfferForm; setForm: (form: Off
   );
 }
 
+function OfferCodeEditor({
+  content,
+  files,
+  offer,
+  saving,
+  selectedFile,
+  setContent,
+  onClose,
+  onSave,
+  onSelectFile,
+}: {
+  content: string;
+  files: OfferFile[];
+  offer: Offer;
+  saving: boolean;
+  selectedFile: string;
+  setContent: (content: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+  onSelectFile: (path: string) => void;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <div className="fixed inset-0 z-50 bg-white text-neutral-950">
+      <div className="flex h-12 items-center justify-between border-b border-neutral-200 px-4">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" disabled>
+            {t("actions.createFile")}
+          </Button>
+          <Button variant="outline" size="sm" disabled>
+            {t("actions.uploadFile")}
+          </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button className="bg-[#45b84a] text-white hover:bg-[#3da442]" disabled={saving || !selectedFile} onClick={onSave}>
+            <Save className="h-4 w-4" />
+            {t("actions.save")}
+          </Button>
+          <Button aria-label={t("actions.close")} variant="ghost" size="icon-sm" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+      <div className="grid h-[calc(100vh-48px)] grid-cols-[320px_1fr]">
+        <aside className="border-r border-neutral-200 bg-neutral-50">
+          <div className="border-b border-neutral-200 px-4 py-3">
+            <div className="font-medium">{offer.name}</div>
+            <div className="text-xs text-neutral-500">/lander/{offer.local_path}</div>
+          </div>
+          <div className="divide-y divide-neutral-200">
+            {files.length === 0 ? (
+              <div className="px-4 py-6 text-sm text-neutral-500">{t("landing.noFiles")}</div>
+            ) : (
+              files.map((file) => (
+                <button
+                  key={file.path}
+                  className={[
+                    "flex w-full items-center gap-3 px-4 py-3 text-left text-sm",
+                    selectedFile === file.path ? "bg-white text-blue-600" : "hover:bg-white",
+                    !file.editable ? "cursor-not-allowed opacity-50" : "",
+                  ].join(" ")}
+                  disabled={!file.editable}
+                  onClick={() => onSelectFile(file.path)}
+                  type="button"
+                >
+                  <FileText className="h-4 w-4" />
+                  <span className="min-w-0 flex-1 truncate">{file.path}</span>
+                  <span className="text-xs text-neutral-400">{formatSize(file.size)}</span>
+                </button>
+              ))
+            )}
+          </div>
+        </aside>
+        <section className="flex min-w-0 flex-col">
+          <div className="flex h-12 items-center gap-2 border-b border-neutral-200 px-4 text-sm text-neutral-500">
+            <span>{offer.name}</span>
+            <span>›</span>
+            <span className="font-medium text-neutral-800">{selectedFile || t("landing.noEditableFile")}</span>
+          </div>
+          <textarea
+            className="h-full w-full flex-1 resize-none bg-white px-6 py-4 font-mono text-sm leading-6 outline-none"
+            disabled={!selectedFile}
+            spellCheck={false}
+            value={fileContentValue(content, selectedFile)}
+            onChange={(event) => setContent(event.target.value)}
+          />
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function IconAction({
+  children,
+  label,
+  onClick,
+}: {
+  children: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <Button aria-label={label} size="icon-sm" title={label} variant="ghost" onClick={onClick}>
+      {children}
+    </Button>
+  );
+}
+
 function offerPayload(form: OfferForm) {
   return {
     name: form.name,
@@ -754,4 +975,21 @@ function countryLabel(countries: Country[], value?: string) {
 
 function formatMoney(value: number, currency: string) {
   return `${currency || "EUR"} ${Number(value || 0).toFixed(4)}`;
+}
+
+function formatSize(size: number) {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${Math.round(size / 1024)} KB`;
+  }
+  return `${Math.round(size / 1024 / 1024)} MB`;
+}
+
+function fileContentValue(content: string, selectedFile: string) {
+  if (!selectedFile) {
+    return "";
+  }
+  return content;
 }
