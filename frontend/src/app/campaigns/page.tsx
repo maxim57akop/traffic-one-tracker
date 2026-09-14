@@ -869,24 +869,24 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
                 </div>
               </div>
 
-              <div className="mt-10 text-center text-lg text-muted-foreground">
+              <div className="mt-10 text-center text-sm text-muted-foreground">
                 {selectedFlows.length === 0 ? (
                   c.emptyFlows
                 ) : (
                   <div className="overflow-hidden text-left">
                     <table className="w-full text-sm">
                       <thead className="border-b border-neutral-200 text-neutral-500 dark:border-neutral-800">
-                        <tr className="h-12">
+                        <tr className="h-10">
                           <th className="w-10 px-2"></th>
                           <th className="w-12 px-2">
                             <input className="size-4 rounded border-neutral-300" type="checkbox" aria-label="Select all flows" />
                           </th>
-                          <th className="w-28 px-3 text-left text-base font-medium">ID</th>
+                          <th className="w-28 px-3 text-left text-sm font-medium">ID</th>
                           <th className="px-3 text-left"></th>
-                          <th className="w-32 px-3 text-right text-base font-medium">Clicks</th>
-                          <th className="w-32 px-3 text-right text-base font-medium">LP Clicks</th>
-                          <th className="w-28 px-3 text-right text-base font-medium">UC</th>
-                          <th className="w-28 px-3 text-right text-base font-medium">Bots</th>
+                          <th className="w-32 px-3 text-right text-sm font-medium">Clicks</th>
+                          <th className="w-32 px-3 text-right text-sm font-medium">LP Clicks</th>
+                          <th className="w-28 px-3 text-right text-sm font-medium">UC</th>
+                          <th className="w-28 px-3 text-right text-sm font-medium">Bots</th>
                           <th className="w-12 px-2"></th>
                         </tr>
                       </thead>
@@ -895,13 +895,13 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
                           const destination = flowDestinationDetails(flow.id, streams, destinations, offers, landings);
                           return (
                             <tr key={flow.id} className="align-top">
-                              <td className="px-2 py-5 text-neutral-400">
-                                <GripVertical className="size-5" />
+                              <td className="px-2 py-3 text-neutral-400">
+                                <GripVertical className="size-4" />
                               </td>
-                              <td className="px-2 py-5">
+                              <td className="px-2 py-3">
                                 <input className="size-4 rounded border-neutral-300" type="checkbox" aria-label={`Select ${flow.name}`} />
                               </td>
-                              <td className="px-3 py-5 text-lg text-neutral-950 dark:text-neutral-50">
+                              <td className="px-3 py-3 text-base text-neutral-950 dark:text-neutral-50">
                                 <div className="flex items-center gap-3">
                                   <span>{flow.id}</span>
                                   <span
@@ -910,27 +910,27 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
                                   />
                                 </div>
                               </td>
-                              <td className="px-3 py-5">
+                              <td className="px-3 py-3">
                                 <div className="flex items-center gap-3">
-                                  <button className="text-lg text-blue-500 hover:underline" onClick={() => openEditFlow(flow)}>
+                                  <button className="text-base text-blue-500 hover:underline" onClick={() => openEditFlow(flow)}>
                                     {flow.name}
                                   </button>
-                                  <Star className="size-5 text-neutral-400" />
+                                  <Star className="size-4 text-neutral-400" />
                                 </div>
-                                <div className="mt-4 pl-10 text-lg font-semibold text-neutral-950 dark:text-neutral-50">
+                                <div className="mt-3 pl-8 text-base font-semibold text-neutral-950 dark:text-neutral-50">
                                   {destination.kindLabel}
                                 </div>
-                                <div className="mt-2 pl-16 text-base text-neutral-950 dark:text-neutral-50">
+                                <div className="mt-1.5 pl-12 text-sm text-neutral-950 dark:text-neutral-50">
                                   {destination.name}
                                   <span className="ml-3 text-[#59bf5f]">{destination.weight}%</span>
                                 </div>
                               </td>
-                              <td className="px-3 py-5 text-right text-lg text-blue-500">{formatNumber(flow.clicks ?? 0, 0)}</td>
-                              <td className="px-3 py-5 text-right text-lg text-blue-500">{formatNumber(flow.lp_clicks ?? 0, 0)}</td>
-                              <td className="px-3 py-5 text-right text-lg text-blue-500">{formatNumber(flow.unique_flow ?? 0, 0)}</td>
-                              <td className="px-3 py-5 text-right text-lg text-blue-500">{formatNumber(flow.bots ?? 0, 0)}</td>
-                              <td className="px-2 py-5 text-right text-neutral-400">
-                                <X className="ml-auto size-5" />
+                              <td className="px-3 py-3 text-right text-sm text-blue-500">{formatNumber(flow.clicks ?? 0, 0)}</td>
+                              <td className="px-3 py-3 text-right text-sm text-blue-500">{formatNumber(flow.lp_clicks ?? 0, 0)}</td>
+                              <td className="px-3 py-3 text-right text-sm text-blue-500">{formatNumber(flow.unique_flow ?? 0, 0)}</td>
+                              <td className="px-3 py-3 text-right text-sm text-blue-500">{formatNumber(flow.bots ?? 0, 0)}</td>
+                              <td className="px-2 py-3 text-right text-neutral-400">
+                                <X className="ml-auto size-4" />
                               </td>
                             </tr>
                           );
