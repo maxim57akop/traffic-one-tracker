@@ -358,42 +358,80 @@ func (app *App) serveLandingURL(w http.ResponseWriter, r *http.Request, rawURL s
 	if err != nil || parsed.IsAbs() || !strings.HasPrefix(parsed.Path, "/lander/") {
 		return false
 	}
-	http.Redirect(w, r, rawURL, http.StatusFound)
+	_, relative, err := app.resolveLandingRequest(strings.TrimPrefix(parsed.Path, "/lander/"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "Landing not found")
+		return true
+	}
+	internalPath := "/__lander/" + relative
+	if parsed.RawQuery != "" {
+		internalPath += "?" + parsed.RawQuery
+	}
+	w.Header().Set("X-Accel-Redirect", internalPath)
 	return true
 }
 
 func (app *App) serveLandingPath(w http.ResponseWriter, r *http.Request, path string) {
-	path = strings.Trim(path, "/")
-	if path == "" {
+	filePath, _, err := app.resolveLandingRequest(path)
+	if err != nil {
 		writeError(w, http.StatusNotFound, "Landing not found")
 		return
+	}
+
+	http.ServeFile(w, r, filePath)
+}
+
+func (app *App) resolveLandingRequest(path string) (string, string, error) {
+	path = strings.Trim(path, "/")
+	if path == "" {
+		return "", "", errors.New("landing path is empty")
 	}
 
 	parts := strings.SplitN(path, "/", 2)
 	localPath := parts[0]
 	if _, ok := normalizeLandingFolder(localPath); !ok {
-		writeError(w, http.StatusNotFound, "Landing not found")
-		return
+		return "", "", errors.New("invalid landing folder")
 	}
 
-	requested := "index.html"
+	requested := "index.php"
 	if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
 		requested = parts[1]
 	}
 	filePath, err := app.resolveLandingFile(localPath, requested)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "Not found")
-		return
+		return "", "", err
 	}
-	if _, err := os.Stat(filePath); errors.Is(err, os.ErrNotExist) && requested == "index.html" {
-		filePath, err = app.resolveLandingFile(localPath, "index.php")
+	if _, err := os.Stat(filePath); errors.Is(err, os.ErrNotExist) && requested == "index.php" {
+		requested = "index.html"
+		filePath, err = app.resolveLandingFile(localPath, "index.html")
 	}
 	if err != nil {
-		writeError(w, http.StatusNotFound, "Not found")
-		return
+		return "", "", err
+	}
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return "", "", err
+	}
+	if info.IsDir() {
+		foundIndex := false
+		for _, indexFile := range []string{"index.php", "index.html"} {
+			indexPath, indexErr := app.resolveLandingFile(localPath, filepath.ToSlash(filepath.Join(requested, indexFile)))
+			if indexErr != nil {
+				continue
+			}
+			if indexInfo, statErr := os.Stat(indexPath); statErr == nil && !indexInfo.IsDir() {
+				requested = filepath.ToSlash(filepath.Join(requested, indexFile))
+				filePath = indexPath
+				foundIndex = true
+				break
+			}
+		}
+		if !foundIndex {
+			return "", "", errors.New("landing index not found")
+		}
 	}
 
-	http.ServeFile(w, r, filePath)
+	return filePath, filepath.ToSlash(filepath.Join(localPath, requested)), nil
 }
 
 func (app *App) scanLanding(row scanner) (Landing, error) {
