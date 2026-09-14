@@ -17,6 +17,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./lander:/app/lander
+      - ./docker/php:/app/php:ro
 
   backend:
     build:
