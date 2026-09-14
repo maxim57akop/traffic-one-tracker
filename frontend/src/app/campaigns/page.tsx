@@ -822,7 +822,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
       showToast("error", "URL is required");
       return;
     }
-    if (flowForm.destinationType !== "url" && (!flowForm.landingId || !flowForm.offerId)) {
+    if (flowForm.destinationType !== "url" && !flowForm.landingId && !flowForm.offerId) {
       const message = `${c.destination}: required`;
       setError(message);
       showToast("error", message);
@@ -2303,20 +2303,27 @@ async function saveFlowDestinations(
     return { stream, destinations: savedDestinations };
   }
 
-  savedDestinations.push(
-    await upsertStreamDestination(
-      stream.id,
-      streamDestinations,
-      destinationPayload("landing", form.landingId, "", form.landingWeight, form.landingStatus),
-    ),
-  );
-  savedDestinations.push(
-    await upsertStreamDestination(
-      stream.id,
-      streamDestinations,
-      destinationPayload("offer", form.offerId, "", form.offerWeight, form.offerStatus),
-    ),
-  );
+  if (form.landingId) {
+    savedDestinations.push(
+      await upsertStreamDestination(
+        stream.id,
+        streamDestinations,
+        destinationPayload("landing", form.landingId, "", form.landingWeight, form.landingStatus),
+      ),
+    );
+  }
+  if (form.offerId) {
+    savedDestinations.push(
+      await upsertStreamDestination(
+        stream.id,
+        streamDestinations,
+        destinationPayload("offer", form.offerId, "", form.offerWeight, form.offerStatus),
+      ),
+    );
+  }
+  for (const destination of streamDestinations.filter((item) => (item.destination_type === "landing" && !form.landingId) || (item.destination_type === "offer" && !form.offerId))) {
+    savedDestinations.push(await pauseStreamDestination(destination));
+  }
   for (const destination of streamDestinations.filter((item) => item.destination_type === "url")) {
     savedDestinations.push(await pauseStreamDestination(destination));
   }
