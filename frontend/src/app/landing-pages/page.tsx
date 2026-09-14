@@ -6,16 +6,15 @@ import {
   Code2,
   Download,
   ExternalLink,
-  FileText,
   Plus,
   RefreshCw,
-  Save,
   Settings,
   Trash2,
   Upload,
   X,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
+import { CodeWorkspaceEditor } from "@/components/code-workspace-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -543,10 +542,19 @@ function LandingPagesManagement() {
       )}
 
       {codeOpen && codeLanding && (
-        <CodeEditor
+        <CodeWorkspaceEditor
           content={fileContent}
           files={files}
-          landing={codeLanding}
+          itemName={codeLanding.name}
+          rootLabel={`/lander/${codeLanding.local_path}`}
+          labels={{
+            close: t("actions.close"),
+            createFile: t("actions.createFile"),
+            noEditableFile: t("landing.noEditableFile"),
+            noFiles: t("landing.noFiles"),
+            save: t("actions.save"),
+            uploadFile: t("actions.uploadFile"),
+          }}
           saving={codeSaving}
           selectedFile={selectedFile}
           setContent={setFileContent}
@@ -700,99 +708,6 @@ function LandingModal({
   );
 }
 
-function CodeEditor({
-  content,
-  files,
-  landing,
-  saving,
-  selectedFile,
-  setContent,
-  onClose,
-  onSave,
-  onSelectFile,
-}: {
-  content: string;
-  files: LandingFile[];
-  landing: Landing;
-  saving: boolean;
-  selectedFile: string;
-  setContent: (content: string) => void;
-  onClose: () => void;
-  onSave: () => void;
-  onSelectFile: (path: string) => void;
-}) {
-  const { t } = useI18n();
-
-  return (
-    <div className="fixed inset-0 z-50 bg-white text-neutral-950">
-      <div className="flex h-12 items-center justify-between border-b border-neutral-200 px-4">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" disabled>
-            {t("actions.createFile")}
-          </Button>
-          <Button variant="outline" size="sm" disabled>
-            {t("actions.uploadFile")}
-          </Button>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button className="bg-[#45b84a] text-white hover:bg-[#3da442]" disabled={saving || !selectedFile} onClick={onSave}>
-            <Save className="h-4 w-4" />
-            {t("actions.save")}
-          </Button>
-          <Button aria-label={t("actions.close")} variant="ghost" size="icon-sm" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-      <div className="grid h-[calc(100vh-48px)] grid-cols-[320px_1fr]">
-        <aside className="border-r border-neutral-200 bg-neutral-50">
-          <div className="border-b border-neutral-200 px-4 py-3">
-            <div className="font-medium">{landing.name}</div>
-            <div className="text-xs text-neutral-500">/lander/{landing.local_path}</div>
-          </div>
-          <div className="divide-y divide-neutral-200">
-            {files.length === 0 ? (
-              <div className="px-4 py-6 text-sm text-neutral-500">{t("landing.noFiles")}</div>
-            ) : (
-              files.map((file) => (
-                <button
-                  key={file.path}
-                  className={[
-                    "flex w-full items-center gap-3 px-4 py-3 text-left text-sm",
-                    selectedFile === file.path ? "bg-white text-blue-600" : "hover:bg-white",
-                    !file.editable ? "cursor-not-allowed opacity-50" : "",
-                  ].join(" ")}
-                  disabled={!file.editable}
-                  onClick={() => onSelectFile(file.path)}
-                  type="button"
-                >
-                  <FileText className="h-4 w-4" />
-                  <span className="min-w-0 flex-1 truncate">{file.path}</span>
-                  <span className="text-xs text-neutral-400">{formatSize(file.size)}</span>
-                </button>
-              ))
-            )}
-          </div>
-        </aside>
-        <section className="flex min-w-0 flex-col">
-          <div className="flex h-12 items-center gap-2 border-b border-neutral-200 px-4 text-sm text-neutral-500">
-            <span>{landing.name}</span>
-            <span>›</span>
-            <span className="font-medium text-neutral-800">{selectedFile || t("landing.noEditableFile")}</span>
-          </div>
-          <textarea
-            className="h-full w-full flex-1 resize-none bg-white px-6 py-4 font-mono text-sm leading-6 outline-none"
-            disabled={!selectedFile}
-            spellCheck={false}
-            value={fileContentValue(content, selectedFile)}
-            onChange={(event) => setContent(event.target.value)}
-          />
-        </section>
-      </div>
-    </div>
-  );
-}
-
 function IconAction({
   children,
   label,
@@ -807,21 +722,4 @@ function IconAction({
       {children}
     </Button>
   );
-}
-
-function formatSize(size: number) {
-  if (size < 1024) {
-    return `${size} B`;
-  }
-  if (size < 1024 * 1024) {
-    return `${Math.round(size / 1024)} KB`;
-  }
-  return `${Math.round(size / 1024 / 1024)} MB`;
-}
-
-function fileContentValue(content: string, selectedFile: string) {
-  if (!selectedFile) {
-    return "";
-  }
-  return content;
 }
