@@ -2215,7 +2215,7 @@ func (app *App) reportClicks(w http.ResponseWriter, r *http.Request, user User) 
 			row["city"] = "Local"
 		}
 		row["device_model"] = firstNonEmpty(stringFromAny(row["device_model"]), detectDeviceModel(stringFromAny(row["user_agent"])))
-		row["country_flag"] = countryFlag(stringFromAny(row["country"]))
+		row["country_flag"] = normalizeCountryCode(stringFromAny(row["country"]))
 		row["os_logo"] = osLogo(stringFromAny(row["os"]))
 		row["browser_logo"] = browserLogo(stringFromAny(row["browser"]))
 		row["bot"] = boolFromAny(row["bot"])
@@ -4545,19 +4545,6 @@ func boolFromAny(value any) bool {
 	default:
 		return false
 	}
-}
-
-func countryFlag(country string) string {
-	country = strings.ToUpper(strings.TrimSpace(country))
-	if len(country) != 2 {
-		return ""
-	}
-	first := rune(country[0]) - 'A' + 0x1F1E6
-	second := rune(country[1]) - 'A' + 0x1F1E6
-	if first < 0x1F1E6 || first > 0x1F1FF || second < 0x1F1E6 || second > 0x1F1FF {
-		return ""
-	}
-	return string([]rune{first, second})
 }
 
 func osLogo(osName string) string {

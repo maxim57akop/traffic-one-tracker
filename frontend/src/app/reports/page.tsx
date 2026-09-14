@@ -1,6 +1,8 @@
 "use client";
 
+import * as Flags from "country-flag-icons/react/3x2";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ComponentType } from "react";
 import { ChevronDown, GripVertical, RefreshCw, Search, Settings } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
@@ -350,7 +352,7 @@ function ClicksLog() {
               <tr key={`${row.click_id ?? row.event_id ?? rowIndex}`} className="border-t hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900/70">
                 {activeColumns.map((column) => (
                   <td key={column.key} className="max-w-80 truncate px-3 py-3" title={formatCell(row[column.key], column.key)}>
-                    {renderCell(row[column.key], column.key)}
+                    {renderCell(row[column.key], column.key, row)}
                   </td>
                 ))}
               </tr>
@@ -390,20 +392,42 @@ function ClicksLog() {
   );
 }
 
-function renderCell(value: ClickRow[string], key: string) {
+function renderCell(value: ClickRow[string], key: string, row: ClickRow) {
   if (key === "date_time" && value) {
     return <span className="text-blue-500">{String(value)}</span>;
   }
+  if (key === "country_flag") {
+    return <CountryFlag code={String(value || row.country || "")} />;
+  }
   if (key === "os_logo") {
-    return logoCell(value, { android: "🤖", apple: "", windows: "⊞", linux: "◧" });
+    return logoCell(value, { android: "Android", apple: "Apple", windows: "Windows", linux: "Linux" });
   }
   if (key === "browser_logo") {
-    return logoCell(value, { chrome: "🌐", firefox: "🦊", safari: "🧭", edge: "e" });
+    return logoCell(value, { chrome: "Chrome", firefox: "Firefox", safari: "Safari", edge: "Edge" });
   }
   if (typeof value === "boolean") {
     return value ? "✓" : "";
   }
   return formatCell(value, key);
+}
+
+function CountryFlag({ code }: { code: string }) {
+  const countryCode = code.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(countryCode)) {
+    return "";
+  }
+
+  const Flag = (Flags as Record<string, ComponentType<{ className?: string; title?: string }>>)[countryCode];
+  if (!Flag) {
+    return countryCode;
+  }
+
+  return (
+    <span className="inline-flex items-center gap-2">
+      <Flag className="h-4 w-6 rounded-[1px] shadow-sm" title={countryCode} />
+      <span className="text-xs text-neutral-500">{countryCode}</span>
+    </span>
+  );
 }
 
 function logoCell(value: ClickRow[string], map: Record<string, string>) {
