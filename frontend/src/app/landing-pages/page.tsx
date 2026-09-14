@@ -38,6 +38,11 @@ type Landing = {
   local_path: string;
   preview_url: string;
   files_count: number;
+  clicks: number;
+  lp_clicks: number;
+  bots: number;
+  leads: number;
+  sales: number;
 };
 
 type LandingFile = {
@@ -154,8 +159,8 @@ function LandingPagesManagement() {
     () =>
       filteredLandings.reduce(
         (acc, landing) => ({
-          clicks: acc.clicks,
-          lpClicks: acc.lpClicks,
+          clicks: acc.clicks + (landing.clicks ?? 0),
+          lpClicks: acc.lpClicks + (landing.lp_clicks ?? 0),
           files: acc.files + landing.files_count,
         }),
         { clicks: 0, lpClicks: 0, files: 0 },
@@ -489,11 +494,11 @@ function LandingPagesManagement() {
                       </IconAction>
                     </div>
                   </td>
-                  <td className="h-11 px-3">0</td>
-                  <td className="h-11 px-3">0</td>
-                  <td className="h-11 px-3">0.00%</td>
-                  <td className="h-11 px-3">0</td>
-                  <td className="h-11 px-3">0.00%</td>
+                  <td className="h-11 px-3">{landing.clicks ?? 0}</td>
+                  <td className="h-11 px-3">{landing.lp_clicks ?? 0}</td>
+                  <td className="h-11 px-3">{formatPercent(landing.lp_clicks ?? 0, landing.clicks ?? 0)}</td>
+                  <td className="h-11 px-3">{(landing.leads ?? 0) + (landing.sales ?? 0)}</td>
+                  <td className="h-11 px-3">{formatPercent((landing.leads ?? 0) + (landing.sales ?? 0), landing.clicks ?? 0)}</td>
                   <td className="h-11 px-3">€0.0000</td>
                   <td className="h-11 px-3">€0.0000</td>
                   <td className="h-11 px-3 text-right">
@@ -518,7 +523,7 @@ function LandingPagesManagement() {
               <td className="h-10 px-3">{totals.files} {t("landing.files")}</td>
               <td className="h-10 px-3">{totals.clicks}</td>
               <td className="h-10 px-3">{totals.lpClicks}</td>
-              <td className="h-10 px-3">0.00%</td>
+              <td className="h-10 px-3">{formatPercent(totals.lpClicks, totals.clicks)}</td>
               <td className="h-10 px-3">0</td>
               <td className="h-10 px-3">0.00%</td>
               <td className="h-10 px-3">€0.0000</td>
@@ -722,4 +727,11 @@ function IconAction({
       {children}
     </Button>
   );
+}
+
+function formatPercent(numerator: number, denominator: number) {
+  if (!denominator) {
+    return "0.00%";
+  }
+  return `${((numerator / denominator) * 100).toFixed(2)}%`;
 }

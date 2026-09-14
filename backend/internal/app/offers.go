@@ -122,12 +122,14 @@ func (app *App) offers(w http.ResponseWriter, r *http.Request, user User) {
 	defer rows.Close()
 
 	items := []Offer{}
+	stats := app.offerStats(r.Context(), user.TeamID)
 	for rows.Next() {
 		item, err := app.scanOffer(rows)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "Could not read offer")
 			return
 		}
+		applyItemStatsToOffer(&item, stats[item.ID])
 		items = append(items, item)
 	}
 	writeJSON(w, http.StatusOK, items)

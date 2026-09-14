@@ -105,6 +105,10 @@ type Flow = {
   collect_clicks: boolean;
   status: "active" | "paused";
   notes?: string;
+  clicks: number;
+  lp_clicks: number;
+  unique_flow: number;
+  bots: number;
 };
 
 type Stream = {
@@ -879,9 +883,10 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
                           </th>
                           <th className="w-28 px-3 text-left text-base font-medium">ID</th>
                           <th className="px-3 text-left"></th>
-                          <th className="w-36 px-3 text-right text-base font-medium">Clicks</th>
-                          <th className="w-32 px-3 text-right text-base font-medium">UC</th>
-                          <th className="w-32 px-3 text-right text-base font-medium">Bots</th>
+                          <th className="w-32 px-3 text-right text-base font-medium">Clicks</th>
+                          <th className="w-32 px-3 text-right text-base font-medium">LP Clicks</th>
+                          <th className="w-28 px-3 text-right text-base font-medium">UC</th>
+                          <th className="w-28 px-3 text-right text-base font-medium">Bots</th>
                           <th className="w-12 px-2"></th>
                         </tr>
                       </thead>
@@ -920,9 +925,10 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
                                   <span className="ml-3 text-[#59bf5f]">{destination.weight}%</span>
                                 </div>
                               </td>
-                              <td className="px-3 py-5 text-right text-lg text-blue-500">0</td>
-                              <td className="px-3 py-5 text-right text-lg text-blue-500">0</td>
-                              <td className="px-3 py-5 text-right text-lg text-blue-500">0</td>
+                              <td className="px-3 py-5 text-right text-lg text-blue-500">{formatNumber(flow.clicks ?? 0, 0)}</td>
+                              <td className="px-3 py-5 text-right text-lg text-blue-500">{formatNumber(flow.lp_clicks ?? 0, 0)}</td>
+                              <td className="px-3 py-5 text-right text-lg text-blue-500">{formatNumber(flow.unique_flow ?? 0, 0)}</td>
+                              <td className="px-3 py-5 text-right text-lg text-blue-500">{formatNumber(flow.bots ?? 0, 0)}</td>
                               <td className="px-2 py-5 text-right text-neutral-400">
                                 <X className="ml-auto size-5" />
                               </td>

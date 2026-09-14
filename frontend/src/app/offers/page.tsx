@@ -62,6 +62,11 @@ type Offer = {
   conversion_cap_enabled: boolean;
   daily_conversion_cap: number;
   notes?: string;
+  clicks: number;
+  lp_clicks: number;
+  bots: number;
+  leads: number;
+  sales: number;
 };
 
 type OfferFile = {
@@ -201,7 +206,15 @@ function OffersManagement() {
   }, [groupFilter, networkFilter, offers, search, statusFilter]);
 
   const totals = useMemo(
-    () => filteredOffers.reduce((acc) => ({ clicks: acc.clicks + 0, leads: acc.leads + 0, sales: acc.sales + 0 }), { clicks: 0, leads: 0, sales: 0 }),
+    () =>
+      filteredOffers.reduce(
+        (acc, offer) => ({
+          clicks: acc.clicks + (offer.clicks ?? 0),
+          leads: acc.leads + (offer.leads ?? 0),
+          sales: acc.sales + (offer.sales ?? 0),
+        }),
+        { clicks: 0, leads: 0, sales: 0 },
+      ),
     [filteredOffers],
   );
 
@@ -533,9 +546,9 @@ function OffersManagement() {
                   </td>
                   <td className="h-11 px-3 text-neutral-700">{countryLabel(countries, offer.country)}</td>
                   <td className="h-11 px-3 text-neutral-700">{offer.affiliate_network ?? "-"}</td>
-                  <td className="h-11 px-3">0</td>
-                  <td className="h-11 px-3">0</td>
-                  <td className="h-11 px-3">0</td>
+                  <td className="h-11 px-3">{offer.clicks ?? 0}</td>
+                  <td className="h-11 px-3">{offer.leads ?? 0}</td>
+                  <td className="h-11 px-3">{offer.sales ?? 0}</td>
                   <td className="h-11 px-3">{formatMoney(offer.payout, offer.payout_currency)}</td>
                   <td className="h-11 px-3 text-right">
                     <Button

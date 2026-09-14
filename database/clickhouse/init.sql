@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS trafficone.clicks
     empty_referrer UInt8 DEFAULT 0,
     using_proxy UInt8 DEFAULT 0,
     landing_clicked UInt8 DEFAULT 0,
+    destination_type String DEFAULT '',
     sub_id_1 String DEFAULT '',
     sub_id_2 String DEFAULT '',
     sub_id_3 String DEFAULT '',

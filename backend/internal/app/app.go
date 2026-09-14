@@ -126,6 +126,11 @@ type Offer struct {
 	ConversionCapEnabled bool    `json:"conversion_cap_enabled"`
 	DailyConversionCap   int     `json:"daily_conversion_cap"`
 	Notes                *string `json:"notes,omitempty"`
+	Clicks               int64   `json:"clicks"`
+	LPClicks             int64   `json:"lp_clicks"`
+	Bots                 int64   `json:"bots"`
+	Leads                int64   `json:"leads"`
+	Sales                int64   `json:"sales"`
 }
 
 type Landing struct {
@@ -140,6 +145,11 @@ type Landing struct {
 	LocalPath   string  `json:"local_path"`
 	PreviewURL  string  `json:"preview_url"`
 	FilesCount  int     `json:"files_count"`
+	Clicks      int64   `json:"clicks"`
+	LPClicks    int64   `json:"lp_clicks"`
+	Bots        int64   `json:"bots"`
+	Leads       int64   `json:"leads"`
+	Sales       int64   `json:"sales"`
 }
 
 type Domain struct {
@@ -167,6 +177,10 @@ type Flow struct {
 	CollectClicks bool    `json:"collect_clicks"`
 	Status        string  `json:"status"`
 	Notes         *string `json:"notes,omitempty"`
+	Clicks        int64   `json:"clicks"`
+	LPClicks      int64   `json:"lp_clicks"`
+	UniqueFlow    int64   `json:"unique_flow"`
+	Bots          int64   `json:"bots"`
 }
 
 type FlowFilter struct {
@@ -448,6 +462,7 @@ func (app *App) bootstrapClickHouse(ctx context.Context) error {
 		"ALTER TABLE " + app.clickhouseDatabase + ".clicks ADD COLUMN IF NOT EXISTS empty_referrer UInt8 DEFAULT 0",
 		"ALTER TABLE " + app.clickhouseDatabase + ".clicks ADD COLUMN IF NOT EXISTS using_proxy UInt8 DEFAULT 0",
 		"ALTER TABLE " + app.clickhouseDatabase + ".clicks ADD COLUMN IF NOT EXISTS landing_clicked UInt8 DEFAULT 0",
+		"ALTER TABLE " + app.clickhouseDatabase + ".clicks ADD COLUMN IF NOT EXISTS destination_type String DEFAULT ''",
 	}
 	for index := 1; index <= 30; index++ {
 		statements = append(statements, fmt.Sprintf("ALTER TABLE %s.clicks ADD COLUMN IF NOT EXISTS sub_id_%d String DEFAULT ''", app.clickhouseDatabase, index))
@@ -1385,12 +1400,14 @@ func (app *App) landings(w http.ResponseWriter, r *http.Request, user User) {
 	defer rows.Close()
 
 	items := []Landing{}
+	stats := app.landingStats(r.Context(), user.TeamID)
 	for rows.Next() {
 		item, err := app.scanLanding(rows)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "Could not read landing")
 			return
 		}
+		applyItemStatsToLanding(&item, stats[item.ID])
 		items = append(items, item)
 	}
 	writeJSON(w, http.StatusOK, items)
@@ -1849,12 +1866,14 @@ func (app *App) flows(w http.ResponseWriter, r *http.Request, user User) {
 	defer rows.Close()
 
 	items := []Flow{}
+	stats := app.flowStats(r.Context(), user.TeamID)
 	for rows.Next() {
 		item, err := scanFlow(rows)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "Could not read flow")
 			return
 		}
+		applyItemStatsToFlow(&item, stats[item.ID])
 		items = append(items, item)
 	}
 	writeJSON(w, http.StatusOK, items)
@@ -2411,9 +2430,9 @@ func (app *App) dashboard(w http.ResponseWriter, r *http.Request, user User) {
 	clickRows, err := app.queryClickHouseRows(
 		r.Context(),
 		fmt.Sprintf(
-			`SELECT count() AS clicks,
-			        sum(unique_campaign) AS unique_campaign,
-			        sum(cost) AS cost
+			`SELECT countIf(event_type = 'click') AS clicks,
+			        sumIf(unique_campaign, event_type = 'click') AS unique_campaign,
+			        sumIf(cost, event_type = 'click') AS cost
 			 FROM %s.clicks
 			 WHERE %s
 			 FORMAT JSONEachRow`,
@@ -2463,9 +2482,9 @@ func (app *App) dashboard(w http.ResponseWriter, r *http.Request, user User) {
 		r.Context(),
 		fmt.Sprintf(
 			`SELECT toHour(event_time) AS hour,
-			        count() AS clicks,
-			        sum(unique_campaign) AS unique_campaign,
-			        sum(cost) AS cost
+			        countIf(event_type = 'click') AS clicks,
+			        sumIf(unique_campaign, event_type = 'click') AS unique_campaign,
+			        sumIf(cost, event_type = 'click') AS cost
 			 FROM %s.clicks
 			 WHERE %s
 			 GROUP BY hour
@@ -2555,9 +2574,9 @@ func (app *App) campaignStats(w http.ResponseWriter, r *http.Request, user User)
 		r.Context(),
 		fmt.Sprintf(
 			`SELECT campaign_id AS campaign_id,
-			        count() AS clicks,
-			        sum(unique_campaign) AS unique_campaign,
-			        sum(cost) AS cost
+			        countIf(event_type = 'click') AS clicks,
+			        sumIf(unique_campaign, event_type = 'click') AS unique_campaign,
+			        sumIf(cost, event_type = 'click') AS cost
 			 FROM %s.clicks
 			 WHERE %s
 			 GROUP BY campaign_id
@@ -2706,9 +2725,9 @@ func (app *App) dashboardCampaignTable(ctx context.Context, clickWhere, conversi
 		ctx,
 		fmt.Sprintf(
 			`SELECT campaign_id AS id,
-			        count() AS clicks,
-			        sum(unique_campaign) AS unique_campaign,
-			        sum(cost) AS cost
+			        countIf(event_type = 'click') AS clicks,
+			        sumIf(unique_campaign, event_type = 'click') AS unique_campaign,
+			        sumIf(cost, event_type = 'click') AS cost
 			 FROM %s.clicks
 			 WHERE %s
 			 GROUP BY id
@@ -2757,13 +2776,14 @@ func (app *App) dashboardDestinationTable(ctx context.Context, clickWhere, conve
 			        sum(unique_campaign) AS unique_campaign,
 			        sum(cost) AS cost
 			 FROM %s.clicks
-			 WHERE %s
+			 WHERE %s AND destination_type = '%s'
 			 GROUP BY id
 			 ORDER BY clicks DESC
 			 LIMIT 50
 			 FORMAT JSONEachRow`,
 			app.clickhouseDatabase,
 			clickWhere,
+			destinationType,
 		),
 	)
 	if err != nil {
@@ -2808,9 +2828,9 @@ func (app *App) dashboardSourceTable(ctx context.Context, clickWhere string) Das
 		ctx,
 		fmt.Sprintf(
 			`SELECT source AS id,
-			        count() AS clicks,
-			        sum(unique_campaign) AS unique_campaign,
-			        sum(cost) AS cost
+			        countIf(event_type = 'click') AS clicks,
+			        sumIf(unique_campaign, event_type = 'click') AS unique_campaign,
+			        sumIf(cost, event_type = 'click') AS cost
 			 FROM %s.clicks
 			 WHERE %s
 			 GROUP BY id
@@ -2917,6 +2937,187 @@ func clickHouseDateWhere(column, date string) string {
 	default:
 		return "1 = 1"
 	}
+}
+
+type itemStats struct {
+	Clicks     int64
+	LPClicks   int64
+	UniqueFlow int64
+	Bots       int64
+	Leads      int64
+	Sales      int64
+}
+
+func applyItemStatsToLanding(item *Landing, stats itemStats) {
+	item.Clicks = stats.Clicks
+	item.LPClicks = stats.LPClicks
+	item.Bots = stats.Bots
+	item.Leads = stats.Leads
+	item.Sales = stats.Sales
+}
+
+func applyItemStatsToOffer(item *Offer, stats itemStats) {
+	item.Clicks = stats.Clicks
+	item.LPClicks = stats.LPClicks
+	item.Bots = stats.Bots
+	item.Leads = stats.Leads
+	item.Sales = stats.Sales
+}
+
+func applyItemStatsToFlow(item *Flow, stats itemStats) {
+	item.Clicks = stats.Clicks
+	item.LPClicks = stats.LPClicks
+	item.UniqueFlow = stats.UniqueFlow
+	item.Bots = stats.Bots
+}
+
+func (app *App) landingStats(ctx context.Context, teamID int64) map[int64]itemStats {
+	result := map[int64]itemStats{}
+	teamFilter, hasCampaigns, err := app.clickHouseTeamFilter(ctx, teamID)
+	if err != nil || !hasCampaigns {
+		return result
+	}
+
+	rows, err := app.queryClickHouseRows(
+		ctx,
+		fmt.Sprintf(
+			`SELECT destination_id AS id,
+			        count() AS clicks,
+			        sum(bot) AS bots
+			 FROM %s.clicks
+			 WHERE %s AND destination_type = 'landing' AND event_type = 'click'
+			 GROUP BY id
+			 FORMAT JSONEachRow`,
+			app.clickhouseDatabase,
+			teamFilter,
+		),
+	)
+	if err == nil {
+		for _, row := range rows {
+			id := int64FromAny(row["id"])
+			if id == 0 {
+				continue
+			}
+			result[id] = itemStats{
+				Clicks: int64FromAny(row["clicks"]),
+				Bots:   int64FromAny(row["bots"]),
+			}
+		}
+	}
+
+	landingFilter := strings.ReplaceAll(teamFilter, "campaign_id", "l.campaign_id")
+	offerFilter := strings.ReplaceAll(teamFilter, "campaign_id", "o.campaign_id")
+	lpRows, err := app.queryClickHouseRows(
+		ctx,
+		fmt.Sprintf(
+			`SELECT l.destination_id AS id,
+			        count() AS lp_clicks
+			 FROM %s.clicks o
+			 INNER JOIN %s.clicks l ON l.click_id = o.click_id
+			 WHERE %s AND %s
+			   AND o.destination_type = 'offer'
+			   AND o.event_type = 'lp_click'
+			   AND l.destination_type = 'landing'
+			   AND l.event_type = 'click'
+			 GROUP BY id
+			 FORMAT JSONEachRow`,
+			app.clickhouseDatabase,
+			app.clickhouseDatabase,
+			offerFilter,
+			landingFilter,
+		),
+	)
+	if err != nil {
+		return result
+	}
+	for _, row := range lpRows {
+		id := int64FromAny(row["id"])
+		if id == 0 {
+			continue
+		}
+		stats := result[id]
+		stats.LPClicks = int64FromAny(row["lp_clicks"])
+		result[id] = stats
+	}
+	return result
+}
+
+func (app *App) offerStats(ctx context.Context, teamID int64) map[int64]itemStats {
+	result := map[int64]itemStats{}
+	teamFilter, hasCampaigns, err := app.clickHouseTeamFilter(ctx, teamID)
+	if err != nil || !hasCampaigns {
+		return result
+	}
+	rows, err := app.queryClickHouseRows(
+		ctx,
+		fmt.Sprintf(
+			`SELECT destination_id AS id,
+			        count() AS clicks,
+			        countIf(event_type = 'lp_click') AS lp_clicks,
+			        sum(bot) AS bots
+			 FROM %s.clicks
+			 WHERE %s AND destination_type = 'offer' AND event_type IN ('click', 'lp_click')
+			 GROUP BY id
+			 FORMAT JSONEachRow`,
+			app.clickhouseDatabase,
+			teamFilter,
+		),
+	)
+	if err != nil {
+		return result
+	}
+	for _, row := range rows {
+		id := int64FromAny(row["id"])
+		if id == 0 {
+			continue
+		}
+		result[id] = itemStats{
+			Clicks:   int64FromAny(row["clicks"]),
+			LPClicks: int64FromAny(row["lp_clicks"]),
+			Bots:     int64FromAny(row["bots"]),
+		}
+	}
+	return result
+}
+
+func (app *App) flowStats(ctx context.Context, teamID int64) map[int64]itemStats {
+	result := map[int64]itemStats{}
+	teamFilter, hasCampaigns, err := app.clickHouseTeamFilter(ctx, teamID)
+	if err != nil || !hasCampaigns {
+		return result
+	}
+	rows, err := app.queryClickHouseRows(
+		ctx,
+		fmt.Sprintf(
+			`SELECT flow_id AS id,
+			        countIf(event_type = 'click') AS clicks,
+			        countIf(event_type = 'lp_click') AS lp_clicks,
+			        sumIf(unique_flow, event_type = 'click') AS unique_flow,
+			        sumIf(bot, event_type = 'click') AS bots
+			 FROM %s.clicks
+			 WHERE %s
+			 GROUP BY id
+			 FORMAT JSONEachRow`,
+			app.clickhouseDatabase,
+			teamFilter,
+		),
+	)
+	if err != nil {
+		return result
+	}
+	for _, row := range rows {
+		id := int64FromAny(row["id"])
+		if id == 0 {
+			continue
+		}
+		result[id] = itemStats{
+			Clicks:     int64FromAny(row["clicks"]),
+			LPClicks:   int64FromAny(row["lp_clicks"]),
+			UniqueFlow: int64FromAny(row["unique_flow"]),
+			Bots:       int64FromAny(row["bots"]),
+		}
+	}
+	return result
 }
 
 func (app *App) reportLookups(ctx context.Context, teamID int64) (map[int64]map[string]string, map[int64]string, map[int64]map[string]any) {
@@ -3570,6 +3771,7 @@ func (app *App) trackClick(r *http.Request, campaign CampaignConfig, flow FlowCo
 		"flow_id":          flow.ID,
 		"stream_id":        stream.ID,
 		"destination_id":   destination.ID,
+		"destination_type": destination.Type,
 		"ip":               ip,
 		"user_agent":       userAgent,
 		"referrer":         referrer,
@@ -3589,7 +3791,7 @@ func (app *App) trackClick(r *http.Request, campaign CampaignConfig, flow FlowCo
 		"unique_campaign":  1,
 		"unique_flow":      1,
 		"unique_global":    1,
-		"event_type":       "click",
+		"event_type":       clickEventType(r),
 		"site":             firstNonEmpty(query.Get("site"), query.Get("source")),
 		"x_requested_with": r.Header.Get("X-Requested-With"),
 		"search_engine":    query.Get("search_engine"),
@@ -3605,13 +3807,20 @@ func (app *App) trackClick(r *http.Request, campaign CampaignConfig, flow FlowCo
 		"ip_1_2_3_mask":    maskedIP(ip, 3),
 		"empty_referrer":   boolToInt(referrer == ""),
 		"using_proxy":      boolToInt(r.Header.Get("Via") != "" || r.Header.Get("X-Forwarded-For") != ""),
-		"landing_clicked":  0,
+		"landing_clicked":  boolToInt(r.URL.Query().Get("lp") == "1"),
 	}
 	for index := 1; index <= 30; index++ {
 		key := fmt.Sprintf("sub_id_%d", index)
 		row[key] = firstNonEmpty(query.Get(key), query.Get(fmt.Sprintf("sub%d", index)))
 	}
 	app.insertClickHouse("clicks", row)
+}
+
+func clickEventType(r *http.Request) string {
+	if r.URL.Query().Get("lp") == "1" {
+		return "lp_click"
+	}
+	return "click"
 }
 
 func (app *App) insertClickHouse(table string, row map[string]any) {
