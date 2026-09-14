@@ -118,3 +118,4 @@ Postbacks:
 ```text
 https://your-domain.com/postback?click_id={click_id}&transaction_id={tid}&payout=10.50&currency=USD
 ```
+# traffic-one-tracker
