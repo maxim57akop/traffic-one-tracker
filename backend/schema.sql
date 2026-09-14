@@ -470,7 +470,7 @@ ALTER TABLE flows ADD COLUMN IF NOT EXISTS notes TEXT;
 CREATE TABLE IF NOT EXISTS flow_filters (
     id BIGSERIAL PRIMARY KEY,
     flow_id BIGINT NOT NULL REFERENCES flows(id) ON DELETE CASCADE,
-    type TEXT NOT NULL CHECK (type IN ('country', 'device', 'os', 'browser', 'ip')),
+    type TEXT NOT NULL,
     operator TEXT NOT NULL DEFAULT 'in' CHECK (operator IN ('in', 'not_in', 'equals', 'not_equals')),
     values JSONB NOT NULL,
     position INTEGER NOT NULL DEFAULT 0,
@@ -478,6 +478,7 @@ CREATE TABLE IF NOT EXISTS flow_filters (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE flow_filters DROP CONSTRAINT IF EXISTS flow_filters_type_check;
 
 CREATE TABLE IF NOT EXISTS streams (
     id BIGSERIAL PRIMARY KEY,

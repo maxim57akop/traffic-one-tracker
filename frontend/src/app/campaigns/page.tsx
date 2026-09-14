@@ -96,6 +96,11 @@ type TrafficSource = {
   parameters: Record<string, string>;
 };
 
+type Country = {
+  code: string;
+  name: string;
+};
+
 type Flow = {
   id: number;
   campaign_id: number;
@@ -212,37 +217,37 @@ const parameterRows = [
 const SOURCE_ROWS_KEY = "__traffic_source_rows";
 
 const fbExcludedCountries = [
-  "Australia",
-  "Austria",
-  "Belgium",
-  "Brazil",
-  "Canada",
-  "Chile",
-  "Colombia",
-  "Czech Republic",
-  "Denmark",
-  "Finland",
-  "France",
-  "Germany",
-  "Greece",
-  "Hungary",
-  "Ireland",
-  "Israel",
-  "Italy",
-  "Japan",
-  "Netherlands",
-  "New Zealand",
-  "Norway",
-  "Peru",
-  "Poland",
-  "Portugal",
-  "Slovakia",
-  "South Africa",
-  "Spain",
-  "Sweden",
-  "Switzerland",
-  "United Kingdom",
-  "United States",
+  "AU",
+  "AT",
+  "BE",
+  "BR",
+  "CA",
+  "CL",
+  "CO",
+  "CZ",
+  "DK",
+  "FI",
+  "FR",
+  "DE",
+  "GR",
+  "HU",
+  "IE",
+  "IL",
+  "IT",
+  "JP",
+  "NL",
+  "NZ",
+  "NO",
+  "PE",
+  "PL",
+  "PT",
+  "SK",
+  "ZA",
+  "ES",
+  "SE",
+  "CH",
+  "GB",
+  "US",
 ];
 
 const filterMenuGroups = [
@@ -260,14 +265,34 @@ const filterMenuGroups = [
   },
 ];
 
+const filterTypeAliases: Record<string, string> = {
+  Country: "country",
+  "Device type": "device",
+  OS: "os",
+  Browser: "browser",
+  IP: "ip",
+};
+
 function createFlowFilterDraft(type = "Country"): FlowFilterForm {
+  const filterType = filterTypeAliases[type] ?? type.toLowerCase().replaceAll("/", "_").replaceAll(" ", "_").replaceAll("-", "_");
   return {
     localId: `filter_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-    type,
-    operator: type === "Country" ? "not_in" : "in",
-    values: type === "Country" ? [...fbExcludedCountries] : [],
+    type: filterType,
+    operator: filterType === "country" ? "not_in" : "in",
+    values: filterType === "country" ? [...fbExcludedCountries] : [],
     status: "active",
   };
+}
+
+function filterTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    country: "Country",
+    device: "Device type",
+    os: "OS",
+    browser: "Browser",
+    ip: "IP",
+  };
+  return labels[type] ?? type.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 const copy = {
@@ -521,6 +546,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [domains, setDomains] = useState<Domain[]>([]);
   const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([]);
+  const [countries, setCountries] = useState<Country[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [landings, setLandings] = useState<Landing[]>([]);
   const [flows, setFlows] = useState<Flow[]>([]);
@@ -589,11 +615,12 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
     setError("");
     setLoading(true);
     try {
-      const [campaignData, domainData, sourceData, offerData, landingData, flowData, filterData, streamData, destinationData, statsData] =
+      const [campaignData, domainData, sourceData, countryData, offerData, landingData, flowData, filterData, streamData, destinationData, statsData] =
         await Promise.all([
           apiRequest<Campaign[]>("/campaigns"),
           apiRequest<Domain[]>("/domains"),
           apiRequest<TrafficSource[]>("/traffic-sources"),
+          apiRequest<Country[]>("/countries"),
           apiRequest<Offer[]>("/offers"),
           apiRequest<Landing[]>("/landings"),
           apiRequest<Flow[]>("/flows"),
@@ -605,6 +632,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
       setCampaigns(campaignData);
       setDomains(domainData);
       setTrafficSources(sourceData);
+      setCountries(countryData);
       setOffers(offerData);
       setLandings(landingData);
       setFlows(flowData);
@@ -983,7 +1011,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
                       <tbody>
                         {selectedFlows.map((flow) => {
                           const destination = flowDestinationDetails(flow.id, streams, destinations, offers, landings);
-                          const filterSummaries = flowFilterSummaries(flowFiltersForFlow(flow.id, flowFilters));
+                          const filterSummaries = flowFilterSummaries(flowFiltersForFlow(flow.id, flowFilters), countries);
                           return (
                             <tr key={flow.id} className="align-top">
                               <td className="px-2 py-3 text-neutral-400">
@@ -1231,7 +1259,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
               {flowTab === "schema" ? (
                 <FlowSchemaTab c={c} form={flowForm} offers={offers} landings={landings} setForm={setFlowForm} />
               ) : null}
-              {flowTab === "filters" ? <FlowFiltersTab form={flowForm} setForm={setFlowForm} /> : null}
+              {flowTab === "filters" ? <FlowFiltersTab countries={countries} form={flowForm} setForm={setFlowForm} /> : null}
               {flowTab === "monitoring" ? (
                 <div className="text-sm text-muted-foreground">Monitoring soon.</div>
               ) : null}
@@ -1592,9 +1620,11 @@ function FlowSchemaTab({
 }
 
 function FlowFiltersTab({
+  countries,
   form,
   setForm,
 }: {
+  countries: Country[];
   form: FlowForm;
   setForm: Dispatch<SetStateAction<FlowForm>>;
 }) {
@@ -1673,6 +1703,7 @@ function FlowFiltersTab({
           {form.filters.map((filter) => (
             <FlowFilterCard
               key={filter.localId}
+              countries={countries}
               filter={filter}
               onChange={(patch) => updateFilter(filter.localId, patch)}
               onRemove={() => removeFilter(filter.localId)}
@@ -1685,15 +1716,25 @@ function FlowFiltersTab({
 }
 
 function FlowFilterCard({
+  countries,
   filter,
   onChange,
   onRemove,
 }: {
+  countries: Country[];
   filter: FlowFilterForm;
   onChange: (patch: Partial<FlowFilterForm>) => void;
   onRemove: () => void;
 }) {
   const [valueDraft, setValueDraft] = useState("");
+  const [countrySearch, setCountrySearch] = useState("");
+  const countryOptions = useMemo(() => {
+    const query = countrySearch.trim().toLowerCase();
+    if (!query) {
+      return countries;
+    }
+    return countries.filter((country) => `${country.name} ${country.code}`.toLowerCase().includes(query));
+  }, [countries, countrySearch]);
 
   function addValue() {
     const value = valueDraft.trim();
@@ -1709,10 +1750,20 @@ function FlowFilterCard({
     onChange({ values: filter.values.filter((item) => item !== value) });
   }
 
+  function toggleCountry(code: string) {
+    const selected = new Set(filter.values);
+    if (selected.has(code)) {
+      selected.delete(code);
+    } else {
+      selected.add(code);
+    }
+    onChange({ values: Array.from(selected) });
+  }
+
   return (
     <section className="rounded-md bg-neutral-50 p-5 dark:bg-neutral-900">
       <div className="flex items-center gap-3">
-        <span className="text-base font-normal text-neutral-950 dark:text-neutral-50">{filter.type}</span>
+        <span className="text-base font-normal text-neutral-950 dark:text-neutral-50">{filterTypeLabel(filter.type)}</span>
         <div className="inline-flex overflow-hidden rounded-md border bg-white text-sm dark:border-neutral-800 dark:bg-neutral-950">
           <button
             className={`px-3 py-1.5 ${filter.operator === "in" ? "bg-blue-500 text-white" : "text-neutral-900 dark:text-neutral-100"}`}
@@ -1739,33 +1790,67 @@ function FlowFilterCard({
         <div className="flex flex-wrap gap-2">
           {filter.values.map((value) => (
             <span key={value} className="inline-flex items-center gap-2 bg-neutral-100 px-2.5 py-1.5 text-sm text-neutral-950 dark:bg-neutral-800 dark:text-neutral-50">
-              {value || "Empty"}
+              {filter.type === "country" ? countryDisplayName(countries, value) : value || "Empty"}
               <button className="text-neutral-700 dark:text-neutral-300" type="button" aria-label={`Remove ${value}`} onClick={() => removeValue(value)}>
                 x
               </button>
             </span>
           ))}
         </div>
-        <div className="mt-3 flex items-center gap-2">
-          <Input
-            className="h-9 max-w-xs"
-            placeholder={`Add ${filter.type.toLowerCase()}`}
-            value={valueDraft}
-            onChange={(event) => setValueDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                addValue();
-              }
-            }}
-          />
-          <Button variant="outline" type="button" onClick={addValue}>
-            Add
-          </Button>
-          <button className="ml-auto text-neutral-400" type="button" aria-label="Clear values" onClick={() => onChange({ values: [] })}>
-            <X className="size-5" />
-          </button>
-        </div>
+        {filter.type === "country" ? (
+          <div className="mt-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <Input
+                className="h-9 max-w-xs"
+                placeholder="Search countries"
+                value={countrySearch}
+                onChange={(event) => setCountrySearch(event.target.value)}
+              />
+              <Button variant="outline" type="button" onClick={() => onChange({ values: countries.map((country) => country.code) })}>
+                Select all
+              </Button>
+              <button className="ml-auto text-neutral-400" type="button" aria-label="Clear countries" onClick={() => onChange({ values: [] })}>
+                <X className="size-5" />
+              </button>
+            </div>
+            <div className="grid max-h-52 grid-cols-2 gap-1 overflow-auto rounded-md border p-2 text-sm dark:border-neutral-800 md:grid-cols-3">
+              {countryOptions.map((country) => (
+                <label key={country.code} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-900">
+                  <input
+                    checked={filter.values.includes(country.code)}
+                    className="size-4"
+                    type="checkbox"
+                    onChange={() => toggleCountry(country.code)}
+                  />
+                  <span className="truncate">
+                    {country.name} ({country.code})
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 flex items-center gap-2">
+            <Input
+              className="h-9 max-w-xs"
+              placeholder={`Add ${filterTypeLabel(filter.type).toLowerCase()}`}
+              value={valueDraft}
+              onChange={(event) => setValueDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  addValue();
+                }
+              }}
+            />
+            <Button variant="outline" type="button" onClick={addValue}>
+              Add
+            </Button>
+            <button className="ml-auto text-neutral-400" type="button" aria-label="Clear values" onClick={() => onChange({ values: [] })}>
+              <X className="size-5" />
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="mt-3 flex flex-wrap gap-6 text-sm text-blue-500">
@@ -1773,7 +1858,7 @@ function FlowFilterCard({
         <button type="button" onClick={() => onChange({ values: Array.from(new Set([...filter.values, ""])) })}>
           Include Empty
         </button>
-        <button type="button" onClick={() => onChange({ values: filter.type === "Country" ? [...fbExcludedCountries] : filter.values })}>
+        <button type="button" onClick={() => onChange({ values: filter.type === "country" ? [...fbExcludedCountries] : filter.values })}>
           Insert from a list
         </button>
       </div>
@@ -2419,12 +2504,23 @@ function flowFiltersForFlow(flowId: number, filters: FlowFilter[]) {
     .sort((a, b) => a.position - b.position || a.id - b.id);
 }
 
-function flowFilterSummaries(filters: FlowFilter[]) {
+function flowFilterSummaries(filters: FlowFilter[], countries: Country[]) {
   return filters.map((filter) => {
     const operator = filter.operator === "not_in" ? "is not" : "is";
-    const values = filter.values.map((value) => (value ? `"${value}"` : "Empty")).join(", ");
-    return `${filter.type} ${operator} ${values || "Empty"}`;
+    const values = filter.values
+      .map((value) => (filter.type === "country" ? countryDisplayName(countries, value) : value || "Empty"))
+      .map((value) => `"${value}"`)
+      .join(", ");
+    return `${filterTypeLabel(filter.type)} ${operator} ${values || "Empty"}`;
   });
+}
+
+function countryDisplayName(countries: Country[], code: string) {
+  if (!code) {
+    return "Empty";
+  }
+  const country = countries.find((item) => item.code === code);
+  return country ? `${country.name} (${country.code})` : code;
 }
 
 function uniqueSorted(values: Array<string | undefined>) {
