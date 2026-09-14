@@ -191,6 +191,55 @@ const parameterRows = [
 
 const SOURCE_ROWS_KEY = "__traffic_source_rows";
 
+const fbExcludedCountries = [
+  "Australia",
+  "Austria",
+  "Belgium",
+  "Brazil",
+  "Canada",
+  "Chile",
+  "Colombia",
+  "Czech Republic",
+  "Denmark",
+  "Finland",
+  "France",
+  "Germany",
+  "Greece",
+  "Hungary",
+  "Ireland",
+  "Israel",
+  "Italy",
+  "Japan",
+  "Netherlands",
+  "New Zealand",
+  "Norway",
+  "Peru",
+  "Poland",
+  "Portugal",
+  "Slovakia",
+  "South Africa",
+  "Spain",
+  "Sweden",
+  "Switzerland",
+  "United Kingdom",
+  "United States",
+];
+
+const filterMenuGroups = [
+  {
+    title: "PARAMETERS",
+    items: ["Parameter", "Referrer", "Sites", "X-Requested-With", "Keyword", "Search engine"],
+  },
+  {
+    title: "GEO",
+    items: ["Proxy detected", "City", "Region/state", "Country", "IP", "IPv6", "Mobile operator", "ISP"],
+  },
+  {
+    title: "DEVICE AND BROWSER",
+    items: ["Uniqueness", "Bot", "Browser", "Browser version", "Device model", "Device type", "OS", "OS version", "User agent", "Language"],
+  },
+];
+
 const copy = {
   en: {
     actions: "Actions",
@@ -919,7 +968,13 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
                                   </button>
                                   <Star className="size-4 text-neutral-400" />
                                 </div>
-                                <div className="mt-3 pl-8 text-base font-semibold text-neutral-950 dark:text-neutral-50">
+                                <div className="mt-3 pl-8 text-base font-normal text-neutral-950 dark:text-neutral-50">
+                                  Filters
+                                </div>
+                                <div className="mt-1.5 max-w-md pl-12 text-sm leading-6 text-red-500">
+                                  {flowFilterSummary()}
+                                </div>
+                                <div className="mt-3 pl-8 text-base font-normal text-neutral-950 dark:text-neutral-50">
                                   {destination.kindLabel}
                                 </div>
                                 <div className="mt-1.5 pl-12 text-sm text-neutral-950 dark:text-neutral-50">
@@ -1116,8 +1171,8 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
               <Tabs
                 items={[
                   ["main", "Main"],
-                  ["schema", c.schema],
-                  ["filters", "Filters"],
+                  ["schema", `${c.schema} (3)`],
+                  ["filters", "Filters (1)"],
                   ["monitoring", c.monitoring],
                   ["notes", c.notes],
                 ]}
@@ -1130,9 +1185,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
               {flowTab === "schema" ? (
                 <FlowSchemaTab c={c} form={flowForm} offers={offers} landings={landings} setForm={setFlowForm} />
               ) : null}
-              {flowTab === "filters" ? (
-                <div className="text-sm text-muted-foreground">Filters подключим следующим шагом.</div>
-              ) : null}
+              {flowTab === "filters" ? <FlowFiltersTab /> : null}
               {flowTab === "monitoring" ? (
                 <div className="text-sm text-muted-foreground">Monitoring soon.</div>
               ) : null}
@@ -1488,6 +1541,95 @@ function FlowSchemaTab({
           </section>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function FlowFiltersTab() {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  return (
+    <div className="space-y-8">
+      <div className="relative max-w-xl">
+        <button
+          className="flex h-11 w-full items-center rounded-md border bg-white px-4 text-left text-base text-neutral-500 shadow-sm outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100 dark:border-neutral-800 dark:bg-neutral-950"
+          type="button"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          Filters
+          <ChevronDown className="ml-auto size-5 text-neutral-400" />
+        </button>
+        {menuOpen ? (
+          <div className="absolute left-0 top-[calc(100%+6px)] z-10 max-h-96 w-full overflow-auto rounded-md border bg-white py-2 shadow-lg dark:border-neutral-800 dark:bg-neutral-950">
+            {filterMenuGroups.map((group) => (
+              <div key={group.title}>
+                <div className="px-4 py-2 text-xs font-semibold uppercase text-neutral-400">{group.title}</div>
+                {group.items.map((item) => (
+                  <button
+                    key={item}
+                    className={`block w-full px-4 py-2.5 text-left text-sm text-neutral-900 hover:bg-neutral-100 dark:text-neutral-100 dark:hover:bg-neutral-900 ${
+                      item === "Country" ? "bg-neutral-100 dark:bg-neutral-900" : ""
+                    }`}
+                    type="button"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      <section className="space-y-4">
+        <h3 className="text-base font-normal">Logical relation</h3>
+        <div className="flex gap-8">
+          <FlowModeRadio checked label="AND" name="filters-relation" onChange={() => undefined} />
+          <FlowModeRadio checked={false} label="OR" name="filters-relation" onChange={() => undefined} />
+        </div>
+      </section>
+
+      <section className="rounded-md bg-neutral-50 p-5 dark:bg-neutral-900">
+        <div className="flex items-center gap-3">
+          <span className="text-base font-normal text-neutral-950 dark:text-neutral-50">Country</span>
+          <div className="inline-flex overflow-hidden rounded-md border bg-white text-sm dark:border-neutral-800 dark:bg-neutral-950">
+            <button className="px-3 py-1.5 text-neutral-900 dark:text-neutral-100" type="button">
+              IS
+            </button>
+            <button className="bg-red-500 px-3 py-1.5 text-white" type="button">
+              IS NOT
+            </button>
+          </div>
+          <button className="ml-auto inline-flex items-center gap-2 text-sm text-red-500" type="button">
+            <Trash2 className="size-4" />
+            Remove
+          </button>
+        </div>
+
+        <div className="mt-4 min-h-32 rounded-md border bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950">
+          <div className="flex flex-wrap gap-2">
+            {fbExcludedCountries.map((country) => (
+              <span key={country} className="inline-flex items-center gap-2 bg-neutral-100 px-2.5 py-1.5 text-sm text-neutral-950 dark:bg-neutral-800 dark:text-neutral-50">
+                {country}
+                <button className="text-neutral-700 dark:text-neutral-300" type="button" aria-label={`Remove ${country}`}>
+                  x
+                </button>
+              </span>
+            ))}
+          </div>
+          <div className="mt-3 flex justify-end gap-4 text-neutral-400">
+            <X className="size-5" />
+            <ChevronDown className="size-5" />
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-6 text-sm text-blue-500">
+          <button type="button">Switch to textarea</button>
+          <button type="button">Include Empty</button>
+          <button type="button">Insert from a list</button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -2070,6 +2212,10 @@ function flowDestinationDetails(
   }
   const name = landings.find((landing) => landing.id === destination.destination_id)?.name ?? `Landing #${destination.destination_id}`;
   return { kindLabel: "Landings", name: `[${destination.destination_id ?? "-"}] ${name}`, weight: destination.weight };
+}
+
+function flowFilterSummary() {
+  return `Country is not ${fbExcludedCountries.map((country) => `"${country}"`).join(", ")}`;
 }
 
 function uniqueSorted(values: Array<string | undefined>) {
