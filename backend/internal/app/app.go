@@ -267,6 +267,7 @@ func Run() {
 	mux.HandleFunc("GET /health", app.health)
 	mux.HandleFunc("GET /up", app.health)
 	mux.HandleFunc("GET /api/domain-access", app.domainAccess)
+	mux.HandleFunc("GET /api/admin-access-check", app.adminAccessCheck)
 	mux.HandleFunc("POST /api/auth/login", app.login)
 	mux.HandleFunc("POST /api/auth/logout", app.auth(app.logout))
 	mux.HandleFunc("GET /api/auth/me", app.auth(app.me))
@@ -1604,6 +1605,14 @@ func (app *App) domainServerIP(w http.ResponseWriter, _ *http.Request, _ User) {
 
 func (app *App) domainAccess(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"admin_access_allowed": app.adminAccessAllowed(r)})
+}
+
+func (app *App) adminAccessCheck(w http.ResponseWriter, r *http.Request) {
+	if !app.adminAccessAllowed(r) {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type domainCreateInput struct {
@@ -3119,7 +3128,7 @@ func (app *App) trackerFallback(w http.ResponseWriter, r *http.Request) {
 			app.redirectSlug(w, r, *domain.IndexCampaignSlug)
 			return
 		}
-		writeError(w, http.StatusNotFound, "Index page not configured")
+		writeError(w, http.StatusForbidden, "Index page not configured")
 		return
 	}
 

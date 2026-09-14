@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import { LoginForm } from "@/components/login-form"
 import { Select } from "@/components/ui/select"
 import { getAuthToken } from "@/lib/auth-token"
@@ -10,52 +10,20 @@ import { useI18n } from "@/lib/i18n"
 import type { Language } from "@/lib/i18n"
 import { usePageTitle } from "@/lib/page-title"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api"
-
 export default function LoginPage() {
   const router = useRouter()
   const { language, setLanguage, t } = useI18n()
-  const [adminAccessAllowed, setAdminAccessAllowed] = useState<boolean | null>(null)
   usePageTitle("Login")
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void fetch(`${API_URL}/domain-access`, { headers: { Accept: "application/json" } })
-        .then((response) => response.json() as Promise<{ admin_access_allowed?: boolean }>)
-        .then((data) => {
-          const allowed = data.admin_access_allowed !== false
-          setAdminAccessAllowed(allowed)
-          if (allowed && getAuthToken()) {
-            router.replace("/dashboard")
-          }
-        })
-        .catch(() => {
-          setAdminAccessAllowed(true)
-          if (getAuthToken()) {
-            router.replace("/dashboard")
-          }
-        })
+      if (getAuthToken()) {
+        router.replace("/dashboard")
+      }
     }, 0)
 
     return () => window.clearTimeout(timer)
   }, [router])
-
-  if (adminAccessAllowed === false) {
-    return (
-      <main className="flex min-h-svh items-center justify-center bg-white p-6 text-neutral-950">
-        <div className="max-w-md rounded-md border border-neutral-200 p-6 shadow-sm">
-          <h1 className="text-xl font-semibold tracking-normal">Access denied</h1>
-          <p className="mt-2 text-sm leading-6 text-neutral-500">
-            Admin panel access is disabled for this domain.
-          </p>
-        </div>
-      </main>
-    )
-  }
-
-  if (adminAccessAllowed === null) {
-    return null
-  }
 
   return (
     <div className="grid min-h-svh bg-background lg:grid-cols-2">
