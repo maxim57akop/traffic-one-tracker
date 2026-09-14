@@ -3253,6 +3253,9 @@ func (app *App) redirectSlug(w http.ResponseWriter, r *http.Request, slug string
 	}
 
 	go app.trackClick(r, campaign, flow, stream, destination, clickID, redirectURL)
+	if publicURL, publicErr := appendPublicParams(destination.URL, r.URL.Query()); publicErr == nil && app.serveLandingURL(w, r, publicURL) {
+		return
+	}
 	if app.serveLandingURL(w, r, redirectURL) {
 		return
 	}
@@ -4447,6 +4450,24 @@ func requestClickID(r *http.Request) string {
 	return ""
 }
 
+func appendPublicParams(rawURL string, sourceQuery url.Values) (string, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+	values := parsed.Query()
+	for key, sourceValues := range sourceQuery {
+		if key == "" || values.Has(key) || isTrackerParam(key) {
+			continue
+		}
+		for _, value := range sourceValues {
+			values.Add(key, value)
+		}
+	}
+	parsed.RawQuery = values.Encode()
+	return parsed.String(), nil
+}
+
 func appendClickParams(rawURL, clickID string, campaignID int64, sourceQuery url.Values) (string, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -4466,6 +4487,15 @@ func appendClickParams(rawURL, clickID string, campaignID int64, sourceQuery url
 	values.Set("campaign_id", strconv.FormatInt(campaignID, 10))
 	parsed.RawQuery = values.Encode()
 	return parsed.String(), nil
+}
+
+func isTrackerParam(key string) bool {
+	switch strings.ToLower(key) {
+	case "click_id", "subid", "campaign_id":
+		return true
+	default:
+		return false
+	}
 }
 
 func detectOS(userAgent string) string {
