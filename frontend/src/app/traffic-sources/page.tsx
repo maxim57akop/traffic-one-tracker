@@ -30,7 +30,7 @@ type TrafficSource = {
 
 type SourceForm = {
   name: string;
-  parameters: Record<string, string>;
+  rows: ParameterRow[];
   notes: string;
 };
 
@@ -39,15 +39,29 @@ type SourceTemplate = {
   parameters: Record<string, string>;
 };
 
-const parameterRows = [
-  ["Keyword", "keyword"],
-  ["Cost", "cost"],
-  ["Currency", "currency"],
-  ["External ID", "fbclid"],
-  ["Creative ID", "creative_id"],
-  ["Ad Campaign ID", "utm_campaign"],
-  ["Site", "utm_source"],
-  ...Array.from({ length: 30 }, (_, index) => [`Sub Id ${index + 1}`, `sub_id_${index + 1}`]),
+type ParameterRow = {
+  id: string;
+  name: string;
+  parameter: string;
+  value: string;
+};
+
+const SOURCE_ROWS_KEY = "__traffic_source_rows";
+
+const defaultParameterRows: ParameterRow[] = [
+  { id: "keyword", name: "Keyword", parameter: "keyword", value: "" },
+  { id: "cost", name: "Cost", parameter: "cost", value: "" },
+  { id: "currency", name: "Currency", parameter: "currency", value: "" },
+  { id: "external_id", name: "External ID", parameter: "fbclid", value: "" },
+  { id: "creative_id", name: "Creative ID", parameter: "creative_id", value: "" },
+  { id: "ad_campaign_id", name: "Ad Campaign ID", parameter: "utm_campaign", value: "" },
+  { id: "site", name: "Site", parameter: "utm_source", value: "" },
+  ...Array.from({ length: 30 }, (_, index) => ({
+    id: `sub_id_${index + 1}`,
+    name: `Sub Id ${index + 1}`,
+    parameter: `sub_id_${index + 1}`,
+    value: "",
+  })),
 ];
 
 const sourceTemplates: SourceTemplate[] = [
@@ -69,7 +83,7 @@ const sourceTemplates: SourceTemplate[] = [
 
 const emptyForm: SourceForm = {
   name: "",
-  parameters: {},
+  rows: defaultParameterRows.map((row) => ({ ...row })),
   notes: "",
 };
 
@@ -149,7 +163,7 @@ function TrafficSourcesManagement() {
     setEditingSource(source);
     setForm({
       name: source.name,
-      parameters: source.parameters ?? {},
+      rows: rowsFromParameters(source.parameters ?? {}),
       notes: source.notes ?? "",
     });
     setTemplateName("");
@@ -165,7 +179,7 @@ function TrafficSourcesManagement() {
     }
     setForm({
       name: template.name,
-      parameters: template.parameters,
+      rows: rowsFromParameters(template.parameters),
       notes: "",
     });
   }
@@ -188,7 +202,7 @@ function TrafficSourcesManagement() {
     try {
       const payload = {
         name: form.name,
-        parameters: cleanupMap(form.parameters),
+        parameters: parametersFromRows(form.rows),
         notes: form.notes,
       };
       const saved = editingSource
@@ -306,7 +320,7 @@ function TrafficSourcesManagement() {
                     </button>
                   </td>
                   <td className="h-11 px-3 text-neutral-700">
-                    {Object.keys(source.parameters ?? {}).length}
+                    {countSourceParameters(source.parameters ?? {})}
                   </td>
                   <td className="h-11 max-w-[360px] truncate px-3 text-neutral-500">
                     {source.postback_url || "-"}
@@ -399,6 +413,13 @@ function SourceModal({
 }) {
   const { t } = useI18n();
 
+  function updateRow(index: number, field: keyof Omit<ParameterRow, "id">, value: string) {
+    setForm({
+      ...form,
+      rows: form.rows.map((row, rowIndex) => (rowIndex === index ? { ...row, [field]: value } : row)),
+    });
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
       <div className="flex max-h-[calc(100vh-32px)] w-full max-w-6xl flex-col rounded-lg bg-white shadow-xl">
@@ -450,19 +471,18 @@ function SourceModal({
               <div className="font-medium text-neutral-500">Parameter</div>
               <div />
               <div className="font-medium text-neutral-500">Placeholder or value</div>
-              {parameterRows.map(([label, parameter]) => (
-                <div key={parameter} className="contents">
-                  <Input readOnly value={label} className="bg-neutral-100 text-neutral-500" />
-                  <Input readOnly value={parameter} className="text-right font-medium" />
+              {form.rows.map((row, index) => (
+                <div key={row.id} className="contents">
+                  <Input value={row.name} onChange={(event) => updateRow(index, "name", event.target.value)} />
+                  <Input
+                    value={row.parameter}
+                    className="text-right font-normal"
+                    onChange={(event) => updateRow(index, "parameter", event.target.value)}
+                  />
                   <div className="flex items-center justify-center font-semibold text-neutral-500">=</div>
                   <Input
-                    value={form.parameters[parameter] ?? ""}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        parameters: { ...form.parameters, [parameter]: event.target.value },
-                      })
-                    }
+                    value={row.value}
+                    onChange={(event) => updateRow(index, "value", event.target.value)}
                   />
                 </div>
               ))}
@@ -497,6 +517,46 @@ function SourceModal({
   );
 }
 
-function cleanupMap(values: Record<string, string>) {
-  return Object.fromEntries(Object.entries(values).filter(([, value]) => value.trim() !== ""));
+function rowsFromParameters(values: Record<string, string>) {
+  const rawRows = values[SOURCE_ROWS_KEY];
+  if (rawRows) {
+    try {
+      const parsedRows = JSON.parse(rawRows) as Partial<ParameterRow>[];
+      if (Array.isArray(parsedRows) && parsedRows.length > 0) {
+        return parsedRows.map((row, index) => ({
+          id: row.id?.trim() || `row_${index}`,
+          name: row.name ?? "",
+          parameter: row.parameter ?? "",
+          value: row.value ?? "",
+        }));
+      }
+    } catch {
+      // Fall back to the legacy flat map below.
+    }
+  }
+
+  return defaultParameterRows.map((row) => ({
+    ...row,
+    value: values[row.parameter] ?? "",
+  }));
+}
+
+function parametersFromRows(rows: ParameterRow[]) {
+  const parameters: Record<string, string> = {
+    [SOURCE_ROWS_KEY]: JSON.stringify(rows),
+  };
+
+  for (const row of rows) {
+    const parameter = row.parameter.trim();
+    const value = row.value.trim();
+    if (parameter && value) {
+      parameters[parameter] = value;
+    }
+  }
+
+  return parameters;
+}
+
+function countSourceParameters(values: Record<string, string>) {
+  return Object.keys(values).filter((key) => key !== SOURCE_ROWS_KEY).length;
 }

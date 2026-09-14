@@ -189,6 +189,8 @@ const parameterRows = [
   ...Array.from({ length: 30 }, (_, index) => [`Sub Id ${index + 1}`, `sub_id_${index + 1}`]),
 ];
 
+const SOURCE_ROWS_KEY = "__traffic_source_rows";
+
 const copy = {
   en: {
     actions: "Actions",
@@ -1233,55 +1235,6 @@ function GeneralTab({
         </Field>
       ) : null}
       <RadioGroup
-        label={c.flowRotation}
-        name="flow-rotation"
-        value={form.flowRotation}
-        options={[
-          ["position", "Position-based"],
-          ["weight", "Weight-based"],
-        ]}
-        onChange={(value) => setForm((current) => ({ ...current, flowRotation: value as "position" | "weight" }))}
-      />
-      <Field label={c.costModel}>
-        <Select value={form.costModel} onChange={(event) => setForm((current) => ({ ...current, costModel: event.target.value as "cpc" | "cpm" }))}>
-          <option value="cpc">CPC (Cost per click)</option>
-          <option value="cpm">CPM (Cost per mille)</option>
-        </Select>
-      </Field>
-      <Field label={c.costValue}>
-        <div className="flex gap-2">
-          <Input
-            className="max-w-44"
-            type="number"
-            value={form.costValue}
-            onChange={(event) => setForm((current) => ({ ...current, costValue: event.target.value }))}
-          />
-          <Select
-            className="max-w-36"
-            value={form.costCurrency}
-            onChange={(event) => setForm((current) => ({ ...current, costCurrency: event.target.value }))}
-          >
-            <option value="EUR">EUR</option>
-            <option value="USD">USD</option>
-          </Select>
-        </div>
-        <Checkbox
-          checked={form.costFromParam}
-          label={c.fromCost}
-          onChange={(checked) => setForm((current) => ({ ...current, costFromParam: checked }))}
-        />
-      </Field>
-      <Field label={c.trafficLoss}>
-        <div className="flex max-w-52">
-          <Input
-            type="number"
-            value={form.trafficLoss}
-            onChange={(event) => setForm((current) => ({ ...current, trafficLoss: event.target.value }))}
-          />
-          <span className="flex w-16 items-center justify-center rounded-r-md border border-l-0 bg-muted">%</span>
-        </div>
-      </Field>
-      <RadioGroup
         label={c.uniqueness}
         name="uniqueness"
         value={form.uniqueness}
@@ -1824,10 +1777,31 @@ function mapTrafficSourceParameters(values: Record<string, string>) {
     utm_campaign: "ad_campaign_id",
     utm_source: "source",
   };
+  const sourceValues = parseTrafficSourceRows(values);
 
   return Object.fromEntries(
-    Object.entries(values).map(([key, value]) => [aliases[key] ?? key, value]),
+    Object.entries(sourceValues).map(([key, value]) => [aliases[key] ?? key, value]),
   );
+}
+
+function parseTrafficSourceRows(values: Record<string, string>) {
+  const rawRows = values[SOURCE_ROWS_KEY];
+  if (rawRows) {
+    try {
+      const rows = JSON.parse(rawRows) as Array<{ parameter?: string; value?: string }>;
+      if (Array.isArray(rows)) {
+        return Object.fromEntries(
+          rows
+            .map((row) => [row.parameter?.trim() ?? "", row.value?.trim() ?? ""] as const)
+            .filter(([parameter, value]) => parameter && value),
+        );
+      }
+    } catch {
+      // Fall back to the legacy flat map below.
+    }
+  }
+
+  return Object.fromEntries(Object.entries(values).filter(([key]) => key !== SOURCE_ROWS_KEY));
 }
 
 function campaignTrackerURL(campaign: Campaign) {
