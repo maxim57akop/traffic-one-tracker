@@ -228,10 +228,11 @@ type StreamConfig struct {
 }
 
 type DestinationConfig struct {
-	ID     int64  `json:"id"`
-	Type   string `json:"type"`
-	URL    string `json:"url"`
-	Weight int    `json:"weight"`
+	ID       int64  `json:"id"`
+	Type     string `json:"type"`
+	URL      string `json:"url"`
+	Weight   int    `json:"weight"`
+	OfferURL string `json:"offer_url,omitempty"`
 }
 
 func Run() {
@@ -337,6 +338,7 @@ func Run() {
 	mux.HandleFunc("GET /postback", app.postback)
 	mux.HandleFunc("GET /lead", app.postback)
 	mux.HandleFunc("GET /ftd", app.postback)
+	mux.HandleFunc("GET /offer", app.offerRedirect)
 	mux.HandleFunc("GET /r/{slug}", app.redirect)
 	mux.HandleFunc("GET /{slug}", app.redirect)
 	mux.HandleFunc("GET /lander/", app.serveLanding)
@@ -3174,6 +3176,26 @@ func (app *App) redirect(w http.ResponseWriter, r *http.Request) {
 	app.redirectSlug(w, r, r.PathValue("slug"))
 }
 
+func (app *App) offerRedirect(w http.ResponseWriter, r *http.Request) {
+	if _, ok := app.requireKnownDomain(w, r); !ok {
+		return
+	}
+
+	clickID := firstNonEmpty(r.URL.Query().Get("click_id"), r.URL.Query().Get("subid"))
+	if clickID == "" {
+		writeError(w, http.StatusNotFound, "Offer not found")
+		return
+	}
+
+	offerURL, err := app.redis.Get(r.Context(), "offer:"+clickID).Result()
+	if err != nil || strings.TrimSpace(offerURL) == "" {
+		writeError(w, http.StatusNotFound, "Offer not found")
+		return
+	}
+
+	http.Redirect(w, r, offerURL, http.StatusFound)
+}
+
 func (app *App) redirectSlug(w http.ResponseWriter, r *http.Request, slug string) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
@@ -3208,6 +3230,12 @@ func (app *App) redirectSlug(w http.ResponseWriter, r *http.Request, slug string
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Bad destination URL")
 		return
+	}
+	if destination.Type == "landing" && destination.OfferURL != "" {
+		offerURL, err := appendClickParams(destination.OfferURL, clickID, campaign.ID)
+		if err == nil {
+			_ = app.redis.Set(r.Context(), "offer:"+clickID, offerURL, 24*time.Hour).Err()
+		}
 	}
 
 	go app.trackClick(r, campaign, flow, stream, destination, clickID, redirectURL)
@@ -3331,12 +3359,28 @@ func selectDestination(campaign CampaignConfig, r *http.Request) (FlowConfig, St
 			continue
 		}
 		for _, stream := range flow.Streams {
+			if landing, ok := weightedDestinationByType(stream.Destinations, "landing"); ok {
+				if offer, ok := weightedDestinationByType(stream.Destinations, "offer"); ok {
+					landing.OfferURL = offer.URL
+				}
+				return flow, stream, landing, nil
+			}
 			if destination, ok := weightedDestination(stream.Destinations); ok {
 				return flow, stream, destination, nil
 			}
 		}
 	}
 	return FlowConfig{}, StreamConfig{}, DestinationConfig{}, errors.New("no destination")
+}
+
+func weightedDestinationByType(destinations []DestinationConfig, destinationType string) (DestinationConfig, bool) {
+	filtered := []DestinationConfig{}
+	for _, destination := range destinations {
+		if destination.Type == destinationType {
+			filtered = append(filtered, destination)
+		}
+	}
+	return weightedDestination(filtered)
 }
 
 func weightedDestination(destinations []DestinationConfig) (DestinationConfig, bool) {

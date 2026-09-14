@@ -162,8 +162,15 @@ type FlowForm = {
   status: "active" | "paused";
   destinationType: DestinationType;
   destinationId: string;
+  landingId: string;
+  landingWeight: string;
+  landingStatus: "active" | "paused";
+  offerId: string;
+  offerWeight: string;
+  offerStatus: "active" | "paused";
   url: string;
   weight: string;
+  urlStatus: "active" | "paused";
   notes: string;
 };
 
@@ -376,8 +383,15 @@ const emptyFlowForm: FlowForm = {
   status: "active",
   destinationType: "offer",
   destinationId: "",
+  landingId: "",
+  landingWeight: "100",
+  landingStatus: "active",
+  offerId: "",
+  offerWeight: "100",
+  offerStatus: "active",
   url: "",
   weight: "100",
+  urlStatus: "active",
   notes: "",
 };
 
@@ -690,7 +704,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
       showToast("error", "URL is required");
       return;
     }
-    if (flowForm.destinationType !== "url" && !flowForm.destinationId) {
+    if (flowForm.destinationType !== "url" && (!flowForm.landingId || !flowForm.offerId)) {
       const message = `${c.destination}: required`;
       setError(message);
       showToast("error", message);
@@ -705,18 +719,23 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
           method: "PATCH",
           body: JSON.stringify(flowPayload(flowForm, selectedFlows.length + 1)),
         });
-        const { stream, destination } = await saveFlowDestination(flow, flowForm, streams, destinations);
+        const { stream, destinations: savedDestinations } = await saveFlowDestinations(flow, flowForm, streams, destinations);
 
         setFlows((items) => items.map((item) => (item.id === flow.id ? flow : item)));
         if (stream) {
           setStreams((items) => (items.some((item) => item.id === stream.id) ? items : [...items, stream]));
         }
-        if (destination) {
+        if (savedDestinations.length > 0) {
           setDestinations((items) => {
-            const exists = items.some((item) => item.id === destination.id);
-            return exists ? items.map((item) => (item.id === destination.id ? destination : item)) : [...items, destination];
+            let next = items;
+            for (const destination of savedDestinations) {
+              const exists = next.some((item) => item.id === destination.id);
+              next = exists ? next.map((item) => (item.id === destination.id ? destination : item)) : [...next, destination];
+            }
+            return next;
           });
         }
+        await apiRequest(`/campaigns/${selectedCampaign.id}/compile`, { method: "POST" });
         setFlowModalOpen(false);
         setEditingFlow(null);
         showToast("success", c.flowSaved, flow.name);
@@ -736,14 +755,12 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
           status: "active",
         }),
       });
-      const destination = await apiRequest<StreamDestination>("/stream-destinations", {
-        method: "POST",
-        body: JSON.stringify({ stream_id: stream.id, ...destinationPayload(flowForm) }),
-      });
+      const { destinations: savedDestinations } = await saveFlowDestinations(flow, flowForm, [stream], []);
 
       setFlows((items) => [...items, flow]);
       setStreams((items) => [...items, stream]);
-      setDestinations((items) => [...items, destination]);
+      setDestinations((items) => [...items, ...savedDestinations]);
+      await apiRequest(`/campaigns/${selectedCampaign.id}/compile`, { method: "POST" });
       setFlowModalOpen(false);
       showToast("success", c.flowCreated, flow.name);
     } catch (requestError) {
@@ -1082,7 +1099,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
         <div className="fixed inset-0 z-50 bg-black/45 p-8">
           <div className="mx-auto flex max-h-[92vh] max-w-5xl flex-col rounded-lg bg-white shadow-xl dark:bg-neutral-950">
             <div className="flex items-center border-b px-6 py-5 dark:border-neutral-800">
-              <h2 className="text-2xl font-semibold">{editingFlow ? c.editFlow : c.createFlow}</h2>
+              <h2 className="text-xl font-semibold">{editingFlow ? c.editFlow : c.createFlow}</h2>
               <button className="ml-auto text-muted-foreground" onClick={() => { setFlowModalOpen(false); setEditingFlow(null); }}>
                 <X className="size-6" />
               </button>
@@ -1404,34 +1421,30 @@ function FlowSchemaTab({
   landings: Landing[];
   setForm: Dispatch<SetStateAction<FlowForm>>;
 }) {
-  const selectedOffer = form.destinationType === "offer" ? offers.find((offer) => String(offer.id) === form.destinationId) : undefined;
-  const selectedLanding =
-    form.destinationType === "landing" ? landings.find((landing) => String(landing.id) === form.destinationId) : undefined;
-  const destinationEnabled = form.status === "active";
+  const selectedOffer = offers.find((offer) => String(offer.id) === form.offerId);
+  const selectedLanding = landings.find((landing) => String(landing.id) === form.landingId);
 
   function selectDestination(destinationType: Exclude<DestinationType, "url">, destinationId: number) {
     setForm((current) => ({
       ...current,
       destinationType,
       destinationId: String(destinationId),
+      ...(destinationType === "landing" ? { landingId: String(destinationId) } : { offerId: String(destinationId) }),
       url: "",
     }));
   }
 
   function clearDestination(destinationType: Exclude<DestinationType, "url">) {
-    setForm((current) =>
-      current.destinationType === destinationType
-        ? {
-            ...current,
-            destinationId: "",
-          }
-        : current,
-    );
+    setForm((current) => ({
+      ...current,
+      destinationId: current.destinationType === destinationType ? "" : current.destinationId,
+      ...(destinationType === "landing" ? { landingId: "" } : { offerId: "" }),
+    }));
   }
 
   return (
-    <div className="space-y-9">
-      <div className="flex flex-wrap items-center gap-8">
+    <div className="space-y-7">
+      <div className="flex flex-wrap items-center gap-7">
         <FlowModeRadio
           checked={form.destinationType !== "url"}
           label={c.landingPagesOffers}
@@ -1462,21 +1475,21 @@ function FlowSchemaTab({
       {form.destinationType !== "url" ? (
         <div className="space-y-8">
           <section className="space-y-4">
-            <h3 className="text-xl font-semibold">{c.landingPages}</h3>
+            <h3 className="text-base font-semibold">{c.landingPages}</h3>
             {selectedLanding ? (
               <DestinationRow
                 id={selectedLanding.id}
                 name={selectedLanding.name}
-                enabled={destinationEnabled}
-                weight={form.weight}
+                enabled={form.landingStatus === "active"}
+                weight={form.landingWeight}
                 onDelete={() => clearDestination("landing")}
                 onToggle={() =>
                   setForm((current) => ({
                     ...current,
-                    status: current.status === "active" ? "paused" : "active",
+                    landingStatus: current.landingStatus === "active" ? "paused" : "active",
                   }))
                 }
-                onWeightChange={(weight) => setForm((current) => ({ ...current, weight }))}
+                onWeightChange={(landingWeight) => setForm((current) => ({ ...current, landingWeight }))}
               />
             ) : null}
             <AddDestinationSelect
@@ -1487,29 +1500,29 @@ function FlowSchemaTab({
           </section>
 
           <section className="space-y-4">
-            <h3 className="text-xl font-semibold">{c.offers}</h3>
+            <h3 className="text-base font-semibold">{c.offers}</h3>
             {selectedOffer ? (
               <DestinationRow
                 id={selectedOffer.id}
                 name={selectedOffer.name}
-                enabled={destinationEnabled}
-                weight={form.weight}
+                enabled={form.offerStatus === "active"}
+                weight={form.offerWeight}
                 onDelete={() => clearDestination("offer")}
                 onToggle={() =>
                   setForm((current) => ({
                     ...current,
-                    status: current.status === "active" ? "paused" : "active",
+                    offerStatus: current.offerStatus === "active" ? "paused" : "active",
                   }))
                 }
-                onWeightChange={(weight) => setForm((current) => ({ ...current, weight }))}
+                onWeightChange={(offerWeight) => setForm((current) => ({ ...current, offerWeight }))}
               />
             ) : null}
             <AddDestinationSelect label={c.addOffers} items={offers} onSelect={(offerId) => selectDestination("offer", offerId)} />
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-xl font-semibold">{c.offerSelection}</h3>
-            <div className="flex flex-wrap gap-8">
+            <h3 className="text-base font-semibold">{c.offerSelection}</h3>
+            <div className="flex flex-wrap gap-7">
               <FlowModeRadio checked label={c.beforeClick} name="offer-selection" onChange={() => undefined} />
               <FlowModeRadio checked={false} label={c.afterClick} name="offer-selection" onChange={() => undefined} />
             </div>
@@ -1534,14 +1547,14 @@ function FlowModeRadio({
   onChange: () => void;
 }) {
   return (
-    <label className={`flex items-center gap-3 text-lg font-semibold ${disabled ? "text-muted-foreground" : "cursor-pointer"}`}>
+    <label className={`flex items-center gap-3 text-base font-semibold ${disabled ? "text-muted-foreground" : "cursor-pointer"}`}>
       <input className="peer sr-only" checked={checked} disabled={disabled} name={name} type="radio" onChange={onChange} />
       <span
-        className={`flex size-5 items-center justify-center rounded-full border-2 ${
+        className={`flex size-4 items-center justify-center rounded-full border-2 ${
           checked ? "border-blue-500" : "border-neutral-300"
         } ${disabled ? "opacity-60" : ""}`}
       >
-        {checked ? <span className="size-2 rounded-full bg-blue-500" /> : null}
+        {checked ? <span className="size-1.5 rounded-full bg-blue-500" /> : null}
       </span>
       {label}
     </label>
@@ -1604,13 +1617,13 @@ function DestinationRow({
   onWeightChange: (weight: string) => void;
 }) {
   return (
-    <div className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-4">
-      <button className="text-left text-lg font-semibold text-blue-500 hover:underline" type="button">
+    <div className="grid grid-cols-[minmax(180px,1fr)_auto_auto_auto_auto] items-center gap-4">
+      <button className="text-left text-sm font-semibold text-blue-500 hover:underline" type="button">
         {name}
       </button>
-      <div className="flex h-10 overflow-hidden rounded-md border dark:border-neutral-800">
+      <div className="flex h-9 overflow-hidden rounded-md border dark:border-neutral-800">
         <Input
-          className="h-full w-20 rounded-none border-0 text-right text-base focus:ring-0"
+          className="h-full w-20 rounded-none border-0 text-right text-sm focus:ring-0"
           min="0"
           type="number"
           value={weight}
@@ -1622,17 +1635,17 @@ function DestinationRow({
       </div>
       <button
         aria-label="Toggle destination"
-        className={`relative h-7 w-12 rounded-full transition-colors ${enabled ? "bg-green-500" : "bg-neutral-300"}`}
+        className={`relative h-6 w-11 rounded-full transition-colors ${enabled ? "bg-green-500" : "bg-neutral-300"}`}
         type="button"
         onClick={onToggle}
       >
         <span
-          className={`absolute top-1 size-5 rounded-full bg-white shadow transition-transform ${
-            enabled ? "translate-x-5" : "translate-x-1"
+          className={`absolute left-1 top-1 size-4 rounded-full bg-white shadow transition-transform ${
+            enabled ? "translate-x-5" : "translate-x-0"
           }`}
         />
       </button>
-      <span className="text-lg font-semibold text-muted-foreground">#{id}</span>
+      <span className="text-sm font-semibold text-muted-foreground">#{id}</span>
       <button className="text-red-500 hover:text-red-600" type="button" onClick={onDelete}>
         <Trash2 className="size-5" />
       </button>
@@ -1836,7 +1849,11 @@ function flowCount(campaignId: number, flows: Flow[]) {
 
 function flowToForm(flow: Flow, streams: Stream[], destinations: StreamDestination[]): FlowForm {
   const stream = streams.find((item) => item.flow_id === flow.id);
-  const destination = stream ? destinations.find((item) => item.stream_id === stream.id) : undefined;
+  const flowDestinations = stream ? destinations.filter((item) => item.stream_id === stream.id) : [];
+  const landingDestination = flowDestinations.find((item) => item.destination_type === "landing");
+  const offerDestination = flowDestinations.find((item) => item.destination_type === "offer");
+  const urlDestination = flowDestinations.find((item) => item.destination_type === "url");
+  const primaryDestination = urlDestination ?? landingDestination ?? offerDestination;
 
   return {
     name: flow.name,
@@ -1844,10 +1861,17 @@ function flowToForm(flow: Flow, streams: Stream[], destinations: StreamDestinati
     position: String(flow.position || 1),
     collectClicks: flow.collect_clicks,
     status: flow.status,
-    destinationType: destination?.destination_type ?? "offer",
-    destinationId: destination?.destination_id ? String(destination.destination_id) : "",
-    url: destination?.url ?? "",
-    weight: String(destination?.weight ?? 100),
+    destinationType: urlDestination && urlDestination.status === "active" ? "url" : "offer",
+    destinationId: primaryDestination?.destination_id ? String(primaryDestination.destination_id) : "",
+    landingId: landingDestination?.destination_id ? String(landingDestination.destination_id) : "",
+    landingWeight: String(landingDestination?.weight ?? 100),
+    landingStatus: landingDestination?.status ?? "active",
+    offerId: offerDestination?.destination_id ? String(offerDestination.destination_id) : "",
+    offerWeight: String(offerDestination?.weight ?? 100),
+    offerStatus: offerDestination?.status ?? "active",
+    url: urlDestination?.url ?? "",
+    weight: String(urlDestination?.weight ?? primaryDestination?.weight ?? 100),
+    urlStatus: urlDestination?.status ?? "active",
     notes: flow.notes ?? "",
   };
 }
@@ -1863,30 +1887,36 @@ function flowPayload(form: FlowForm, fallbackPosition: number) {
   };
 }
 
-function destinationPayload(form: FlowForm) {
-  return form.destinationType === "url"
+function destinationPayload(
+  destinationType: DestinationType,
+  destinationId: string,
+  url: string,
+  weight: string,
+  status: "active" | "paused",
+) {
+  return destinationType === "url"
     ? {
         destination_type: "url",
         destination_id: null,
-        url: form.url,
-        weight: Number(form.weight) || 100,
-        status: "active",
+        url,
+        weight: Number(weight) || 100,
+        status,
       }
     : {
-        destination_type: form.destinationType,
-        destination_id: Number(form.destinationId),
+        destination_type: destinationType,
+        destination_id: Number(destinationId),
         url: null,
-        weight: Number(form.weight) || 100,
-        status: "active",
+        weight: Number(weight) || 100,
+        status,
       };
 }
 
-async function saveFlowDestination(
+async function saveFlowDestinations(
   flow: Flow,
   form: FlowForm,
   streams: Stream[],
   destinations: StreamDestination[],
-): Promise<{ stream?: Stream; destination?: StreamDestination }> {
+): Promise<{ stream?: Stream; destinations: StreamDestination[] }> {
   let stream = streams.find((item) => item.flow_id === flow.id);
   if (!stream) {
     stream = await apiRequest<Stream>("/streams", {
@@ -1900,21 +1930,73 @@ async function saveFlowDestination(
     });
   }
 
-  const destination = destinations.find((item) => item.stream_id === stream.id);
-  const payload = destinationPayload(form);
-  if (destination) {
-    const updatedDestination = await apiRequest<StreamDestination>(`/stream-destinations/${destination.id}`, {
+  const savedDestinations: StreamDestination[] = [];
+  const streamDestinations = destinations.filter((item) => item.stream_id === stream.id);
+
+  if (form.destinationType === "url") {
+    savedDestinations.push(
+      await upsertStreamDestination(
+        stream.id,
+        streamDestinations,
+        destinationPayload("url", "", form.url, form.weight, form.urlStatus),
+      ),
+    );
+    for (const destination of streamDestinations.filter((item) => item.destination_type === "landing" || item.destination_type === "offer")) {
+      savedDestinations.push(await pauseStreamDestination(destination));
+    }
+    return { stream, destinations: savedDestinations };
+  }
+
+  savedDestinations.push(
+    await upsertStreamDestination(
+      stream.id,
+      streamDestinations,
+      destinationPayload("landing", form.landingId, "", form.landingWeight, form.landingStatus),
+    ),
+  );
+  savedDestinations.push(
+    await upsertStreamDestination(
+      stream.id,
+      streamDestinations,
+      destinationPayload("offer", form.offerId, "", form.offerWeight, form.offerStatus),
+    ),
+  );
+  for (const destination of streamDestinations.filter((item) => item.destination_type === "url")) {
+    savedDestinations.push(await pauseStreamDestination(destination));
+  }
+  return { stream, destinations: savedDestinations };
+}
+
+async function upsertStreamDestination(
+  streamId: number,
+  destinations: StreamDestination[],
+  payload: ReturnType<typeof destinationPayload>,
+) {
+  const existing = destinations.find((item) => item.destination_type === payload.destination_type);
+  if (existing) {
+    return apiRequest<StreamDestination>(`/stream-destinations/${existing.id}`, {
       method: "PATCH",
       body: JSON.stringify(payload),
     });
-    return { stream, destination: updatedDestination };
   }
 
-  const createdDestination = await apiRequest<StreamDestination>("/stream-destinations", {
+  return apiRequest<StreamDestination>("/stream-destinations", {
     method: "POST",
-    body: JSON.stringify({ stream_id: stream.id, ...payload }),
+    body: JSON.stringify({ stream_id: streamId, ...payload }),
   });
-  return { stream, destination: createdDestination };
+}
+
+async function pauseStreamDestination(destination: StreamDestination) {
+  return apiRequest<StreamDestination>(`/stream-destinations/${destination.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      destination_type: destination.destination_type,
+      destination_id: destination.destination_id ?? null,
+      url: destination.url ?? null,
+      weight: destination.weight,
+      status: "paused",
+    }),
+  });
 }
 
 function statsForCampaign(campaignId: number, stats: Record<number, CampaignStats>): CampaignStats {
@@ -1982,9 +2064,22 @@ function flowDestinationDetails(
   landings: Landing[],
 ) {
   const streamIds = streams.filter((stream) => stream.flow_id === flowId).map((stream) => stream.id);
-  const destination = destinations.find((item) => streamIds.includes(item.stream_id));
+  const flowDestinations = destinations.filter((item) => streamIds.includes(item.stream_id) && item.status === "active");
+  const landingDestination = flowDestinations.find((item) => item.destination_type === "landing");
+  const offerDestination = flowDestinations.find((item) => item.destination_type === "offer");
+  const destination = flowDestinations.find((item) => item.destination_type === "url") ?? landingDestination ?? offerDestination;
   if (!destination) {
     return { kindLabel: "Destination", name: "-", weight: 100 };
+  }
+  if (landingDestination && offerDestination) {
+    const landingName =
+      landings.find((landing) => landing.id === landingDestination.destination_id)?.name ?? `Landing #${landingDestination.destination_id}`;
+    const offerName = offers.find((offer) => offer.id === offerDestination.destination_id)?.name ?? `Offer #${offerDestination.destination_id}`;
+    return {
+      kindLabel: "Landings / Offers",
+      name: `[${landingDestination.destination_id ?? "-"}] ${landingName} -> [${offerDestination.destination_id ?? "-"}] ${offerName}`,
+      weight: landingDestination.weight,
+    };
   }
   if (destination.destination_type === "url") {
     return { kindLabel: "URL", name: destination.url ?? "URL", weight: destination.weight };
