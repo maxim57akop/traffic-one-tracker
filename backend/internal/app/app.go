@@ -323,12 +323,14 @@ func Run() {
 	mux.HandleFunc("GET /api/domains/server-ip", app.auth(app.domainServerIP))
 	mux.HandleFunc("GET /api/flows", app.auth(app.flows))
 	mux.HandleFunc("POST /api/flows", app.auth(app.createFlow))
+	mux.HandleFunc("PATCH /api/flows/{id}", app.auth(app.updateFlow))
 	mux.HandleFunc("GET /api/flow-filters", app.auth(app.flowFilters))
 	mux.HandleFunc("POST /api/flow-filters", app.auth(app.createFlowFilter))
 	mux.HandleFunc("GET /api/streams", app.auth(app.streams))
 	mux.HandleFunc("POST /api/streams", app.auth(app.createStream))
 	mux.HandleFunc("GET /api/stream-destinations", app.auth(app.streamDestinations))
 	mux.HandleFunc("POST /api/stream-destinations", app.auth(app.createStreamDestination))
+	mux.HandleFunc("PATCH /api/stream-destinations/{id}", app.auth(app.updateStreamDestination))
 	mux.HandleFunc("GET /api/dashboard", app.auth(app.dashboard))
 	mux.HandleFunc("GET /api/reports/clicks", app.auth(app.reportClicks))
 	mux.HandleFunc("GET /api/postback", app.postback)
@@ -1913,6 +1915,81 @@ func (app *App) createFlow(w http.ResponseWriter, r *http.Request, user User) {
 	writeJSON(w, http.StatusCreated, item)
 }
 
+func (app *App) updateFlow(w http.ResponseWriter, r *http.Request, user User) {
+	flowID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || flowID <= 0 {
+		writeError(w, http.StatusBadRequest, "Invalid flow id")
+		return
+	}
+
+	var input struct {
+		Name          *string `json:"name"`
+		FlowType      *string `json:"flow_type"`
+		Position      *int    `json:"position"`
+		CollectClicks *bool   `json:"collect_clicks"`
+		Status        *string `json:"status"`
+		Notes         *string `json:"notes"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if !app.ownsFlow(r.Context(), user.TeamID, flowID) {
+		writeError(w, http.StatusNotFound, "Flow not found")
+		return
+	}
+
+	var name *string
+	if input.Name != nil {
+		trimmed := strings.TrimSpace(*input.Name)
+		if trimmed == "" {
+			writeError(w, http.StatusUnprocessableEntity, "Flow name is required")
+			return
+		}
+		name = &trimmed
+	}
+	if input.FlowType != nil && *input.FlowType != "regular" && *input.FlowType != "default" && *input.FlowType != "forced" {
+		writeError(w, http.StatusUnprocessableEntity, "Invalid flow type")
+		return
+	}
+	if input.Status != nil && *input.Status != "active" && *input.Status != "paused" {
+		writeError(w, http.StatusUnprocessableEntity, "Invalid flow status")
+		return
+	}
+
+	var notes any
+	updateNotes := input.Notes != nil
+	if updateNotes {
+		notes = nullableTrim(*input.Notes)
+	}
+	item, err := scanFlow(app.db.QueryRow(
+		r.Context(),
+		`UPDATE flows
+		 SET name = COALESCE($2::text, name),
+		     flow_type = COALESCE($3::text, flow_type),
+		     position = COALESCE($4::integer, position),
+		     collect_clicks = COALESCE($5::boolean, collect_clicks),
+		     status = COALESCE($6::text, status),
+		     notes = CASE WHEN $8::boolean THEN $7::text ELSE notes END,
+		     updated_at = now()
+		 WHERE id = $1
+		 RETURNING id, campaign_id, name, flow_type, position, collect_clicks, status, notes`,
+		flowID,
+		name,
+		input.FlowType,
+		input.Position,
+		input.CollectClicks,
+		input.Status,
+		notes,
+		updateNotes,
+	))
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, item)
+}
+
 func (app *App) flowFilters(w http.ResponseWriter, r *http.Request, user User) {
 	rows, err := app.db.Query(
 		r.Context(),
@@ -2135,6 +2212,86 @@ func (app *App) createStreamDestination(w http.ResponseWriter, r *http.Request, 
 	}
 
 	writeJSON(w, http.StatusCreated, item)
+}
+
+func (app *App) updateStreamDestination(w http.ResponseWriter, r *http.Request, user User) {
+	destinationID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || destinationID <= 0 {
+		writeError(w, http.StatusBadRequest, "Invalid destination id")
+		return
+	}
+
+	var input struct {
+		DestinationType string  `json:"destination_type"`
+		TargetID        *int64  `json:"destination_id"`
+		URL             *string `json:"url"`
+		Weight          int     `json:"weight"`
+		Status          string  `json:"status"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if input.DestinationType != "offer" && input.DestinationType != "landing" && input.DestinationType != "url" {
+		writeError(w, http.StatusUnprocessableEntity, "Invalid destination type")
+		return
+	}
+	if input.DestinationType == "url" && (input.URL == nil || strings.TrimSpace(*input.URL) == "") {
+		writeError(w, http.StatusUnprocessableEntity, "URL destination requires url")
+		return
+	}
+	if input.Weight == 0 {
+		input.Weight = 100
+	}
+	if input.Status == "" {
+		input.Status = "active"
+	}
+	if input.Status != "active" && input.Status != "paused" {
+		writeError(w, http.StatusUnprocessableEntity, "Invalid destination status")
+		return
+	}
+
+	var item StreamDestination
+	var targetID pgtype.Int8
+	var rawURL pgtype.Text
+	err = app.db.QueryRow(
+		r.Context(),
+		`UPDATE stream_destinations sd
+		 SET destination_type = $3,
+		     destination_id = $4,
+		     url = $5,
+		     weight = $6,
+		     status = $7,
+		     updated_at = now()
+		 FROM streams s
+		 JOIN flows f ON f.id = s.flow_id
+		 JOIN campaigns c ON c.id = f.campaign_id
+		 WHERE sd.id = $1
+		   AND sd.stream_id = s.id
+		   AND c.team_id = $2
+		 RETURNING sd.id, sd.stream_id, sd.destination_type, sd.destination_id, sd.url, sd.weight, sd.status`,
+		destinationID,
+		user.TeamID,
+		input.DestinationType,
+		input.TargetID,
+		input.URL,
+		input.Weight,
+		input.Status,
+	).Scan(&item.ID, &item.StreamID, &item.DestinationType, &targetID, &rawURL, &item.Weight, &item.Status)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "Destination not found")
+			return
+		}
+		writeDBError(w, err)
+		return
+	}
+	if targetID.Valid {
+		item.DestinationID = &targetID.Int64
+	}
+	if rawURL.Valid {
+		item.URL = &rawURL.String
+	}
+	writeJSON(w, http.StatusOK, item)
 }
 
 func (app *App) reportClicks(w http.ResponseWriter, r *http.Request, user User) {

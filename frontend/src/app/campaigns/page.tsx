@@ -215,6 +215,8 @@ const copy = {
     schema: "Schema",
     source: "Source",
     flowCreated: "Flow created",
+    flowSaved: "Flow saved",
+    editFlow: "Edit Flow",
     trafficLoss: "Traffic loss",
     uniqueness: "Uniqueness",
     uniquenessTtl: "Uniqueness TTL",
@@ -258,6 +260,8 @@ const copy = {
     schema: "Схема",
     source: "Источник",
     flowCreated: "Flow создан",
+    flowSaved: "Flow сохранен",
+    editFlow: "Редактировать Flow",
     trafficLoss: "Потеря трафика",
     uniqueness: "Уникальность",
     uniquenessTtl: "TTL уникальности",
@@ -301,6 +305,8 @@ const copy = {
     schema: "Схема",
     source: "Джерело",
     flowCreated: "Flow створено",
+    flowSaved: "Flow збережено",
+    editFlow: "Редагувати Flow",
     trafficLoss: "Втрата трафіку",
     uniqueness: "Унікальність",
     uniquenessTtl: "TTL унікальності",
@@ -400,6 +406,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
   const [flowModalOpen, setFlowModalOpen] = useState(false);
   const [flowTab, setFlowTab] = useState<FlowTab>("main");
   const [flowForm, setFlowForm] = useState<FlowForm>(emptyFlowForm);
+  const [editingFlow, setEditingFlow] = useState<Flow | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -619,12 +626,21 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
       name: `Flow ${selectedFlows.length + 1}`,
       position: String(selectedFlows.length + 1),
     });
+    setEditingFlow(null);
     setFlowTab("main");
     setError("");
     setFlowModalOpen(true);
   }
 
-  async function createFlow() {
+  function openEditFlow(flow: Flow) {
+    setEditingFlow(flow);
+    setFlowForm(flowToForm(flow, streams, destinations));
+    setFlowTab("main");
+    setError("");
+    setFlowModalOpen(true);
+  }
+
+  async function saveFlow() {
     if (!selectedCampaign) {
       setError("Save campaign first");
       showToast("error", "Save campaign first");
@@ -641,21 +657,42 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
       showToast("error", "URL is required");
       return;
     }
+    if (flowForm.destinationType !== "url" && !flowForm.destinationId) {
+      const message = `${c.destination}: required`;
+      setError(message);
+      showToast("error", message);
+      return;
+    }
 
     setSaving(true);
     setError("");
     try {
+      if (editingFlow) {
+        const flow = await apiRequest<Flow>(`/flows/${editingFlow.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(flowPayload(flowForm, selectedFlows.length + 1)),
+        });
+        const { stream, destination } = await saveFlowDestination(flow, flowForm, streams, destinations);
+
+        setFlows((items) => items.map((item) => (item.id === flow.id ? flow : item)));
+        if (stream) {
+          setStreams((items) => (items.some((item) => item.id === stream.id) ? items : [...items, stream]));
+        }
+        if (destination) {
+          setDestinations((items) => {
+            const exists = items.some((item) => item.id === destination.id);
+            return exists ? items.map((item) => (item.id === destination.id ? destination : item)) : [...items, destination];
+          });
+        }
+        setFlowModalOpen(false);
+        setEditingFlow(null);
+        showToast("success", c.flowSaved, flow.name);
+        return;
+      }
+
       const flow = await apiRequest<Flow>("/flows", {
         method: "POST",
-        body: JSON.stringify({
-          campaign_id: selectedCampaign.id,
-          name: flowForm.name,
-          flow_type: flowForm.flowType,
-          position: Number(flowForm.position) || selectedFlows.length + 1,
-          collect_clicks: flowForm.collectClicks,
-          status: flowForm.status,
-          notes: flowForm.notes,
-        }),
+        body: JSON.stringify({ campaign_id: selectedCampaign.id, ...flowPayload(flowForm, selectedFlows.length + 1) }),
       });
       const stream = await apiRequest<Stream>("/streams", {
         method: "POST",
@@ -666,18 +703,9 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
           status: "active",
         }),
       });
-      const destinationBody =
-        flowForm.destinationType === "url"
-          ? { stream_id: stream.id, destination_type: "url", url: flowForm.url, weight: Number(flowForm.weight) || 100 }
-          : {
-              stream_id: stream.id,
-              destination_type: flowForm.destinationType,
-              destination_id: Number(flowForm.destinationId) || undefined,
-              weight: Number(flowForm.weight) || 100,
-            };
       const destination = await apiRequest<StreamDestination>("/stream-destinations", {
         method: "POST",
-        body: JSON.stringify(destinationBody),
+        body: JSON.stringify({ stream_id: stream.id, ...destinationPayload(flowForm) }),
       });
 
       setFlows((items) => [...items, flow]);
@@ -686,7 +714,7 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
       setFlowModalOpen(false);
       showToast("success", c.flowCreated, flow.name);
     } catch (requestError) {
-      const message = requestError instanceof Error ? requestError.message : "Could not create flow";
+      const message = requestError instanceof Error ? requestError.message : editingFlow ? "Could not save flow" : "Could not create flow";
       setError(message);
       showToast("error", message);
     } finally {
@@ -800,7 +828,11 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
                         {selectedFlows.map((flow) => (
                           <tr key={flow.id} className="border-t dark:border-neutral-800">
                             <td className="px-3 py-3">{flow.id}</td>
-                            <td className="px-3 py-3 text-blue-500">{flow.name}</td>
+                            <td className="px-3 py-3">
+                              <button className="text-blue-500 hover:underline" onClick={() => openEditFlow(flow)}>
+                                {flow.name}
+                              </button>
+                            </td>
                             <td className="px-3 py-3 capitalize">{flow.flow_type}</td>
                             <td className="px-3 py-3">{flowDestinationLabel(flow.id, streams, destinations, offers, landings)}</td>
                             <td className="px-3 py-3">{flow.status}</td>
@@ -976,8 +1008,8 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
         <div className="fixed inset-0 z-50 bg-black/45 p-8">
           <div className="mx-auto flex max-h-[92vh] max-w-5xl flex-col rounded-lg bg-white shadow-xl dark:bg-neutral-950">
             <div className="flex items-center border-b px-6 py-5 dark:border-neutral-800">
-              <h2 className="text-2xl font-semibold">{c.createFlow}</h2>
-              <button className="ml-auto text-muted-foreground" onClick={() => setFlowModalOpen(false)}>
+              <h2 className="text-2xl font-semibold">{editingFlow ? c.editFlow : c.createFlow}</h2>
+              <button className="ml-auto text-muted-foreground" onClick={() => { setFlowModalOpen(false); setEditingFlow(null); }}>
                 <X className="size-6" />
               </button>
             </div>
@@ -1014,11 +1046,11 @@ export function CampaignsManagement({ detailMode = false, initialCampaignId }: C
               ) : null}
             </div>
             <div className="flex justify-end gap-2 border-t px-6 py-4 dark:border-neutral-800">
-              <Button variant="outline" onClick={() => setFlowModalOpen(false)}>
+              <Button variant="outline" onClick={() => { setFlowModalOpen(false); setEditingFlow(null); }}>
                 {t("actions.cancel")}
               </Button>
-              <Button disabled={saving} onClick={() => void createFlow()}>
-                {t("actions.create")}
+              <Button disabled={saving} onClick={() => void saveFlow()}>
+                {editingFlow ? t("actions.save") : t("actions.create")}
               </Button>
             </div>
           </div>
@@ -1544,6 +1576,89 @@ function encodeMacroValue(value: string) {
 
 function flowCount(campaignId: number, flows: Flow[]) {
   return flows.filter((flow) => flow.campaign_id === campaignId).length;
+}
+
+function flowToForm(flow: Flow, streams: Stream[], destinations: StreamDestination[]): FlowForm {
+  const stream = streams.find((item) => item.flow_id === flow.id);
+  const destination = stream ? destinations.find((item) => item.stream_id === stream.id) : undefined;
+
+  return {
+    name: flow.name,
+    flowType: flow.flow_type,
+    position: String(flow.position || 1),
+    collectClicks: flow.collect_clicks,
+    status: flow.status,
+    destinationType: destination?.destination_type ?? "offer",
+    destinationId: destination?.destination_id ? String(destination.destination_id) : "",
+    url: destination?.url ?? "",
+    weight: String(destination?.weight ?? 100),
+    notes: flow.notes ?? "",
+  };
+}
+
+function flowPayload(form: FlowForm, fallbackPosition: number) {
+  return {
+    name: form.name,
+    flow_type: form.flowType,
+    position: Number(form.position) || fallbackPosition,
+    collect_clicks: form.collectClicks,
+    status: form.status,
+    notes: form.notes,
+  };
+}
+
+function destinationPayload(form: FlowForm) {
+  return form.destinationType === "url"
+    ? {
+        destination_type: "url",
+        destination_id: null,
+        url: form.url,
+        weight: Number(form.weight) || 100,
+        status: "active",
+      }
+    : {
+        destination_type: form.destinationType,
+        destination_id: Number(form.destinationId),
+        url: null,
+        weight: Number(form.weight) || 100,
+        status: "active",
+      };
+}
+
+async function saveFlowDestination(
+  flow: Flow,
+  form: FlowForm,
+  streams: Stream[],
+  destinations: StreamDestination[],
+): Promise<{ stream?: Stream; destination?: StreamDestination }> {
+  let stream = streams.find((item) => item.flow_id === flow.id);
+  if (!stream) {
+    stream = await apiRequest<Stream>("/streams", {
+      method: "POST",
+      body: JSON.stringify({
+        flow_id: flow.id,
+        name: `${flow.name} stream`,
+        position: 1,
+        status: "active",
+      }),
+    });
+  }
+
+  const destination = destinations.find((item) => item.stream_id === stream.id);
+  const payload = destinationPayload(form);
+  if (destination) {
+    const updatedDestination = await apiRequest<StreamDestination>(`/stream-destinations/${destination.id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    return { stream, destination: updatedDestination };
+  }
+
+  const createdDestination = await apiRequest<StreamDestination>("/stream-destinations", {
+    method: "POST",
+    body: JSON.stringify({ stream_id: stream.id, ...payload }),
+  });
+  return { stream, destination: createdDestination };
 }
 
 function statsForCampaign(campaignId: number, stats: Record<number, CampaignStats>): CampaignStats {
