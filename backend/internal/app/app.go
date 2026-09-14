@@ -3239,7 +3239,7 @@ func (app *App) redirectSlug(w http.ResponseWriter, r *http.Request, slug string
 	}
 
 	go app.trackClick(r, campaign, flow, stream, destination, clickID, redirectURL)
-	if destination.Type == "landing" && app.serveLandingURL(w, r, redirectURL) {
+	if app.serveLandingURL(w, r, redirectURL) {
 		return
 	}
 	http.Redirect(w, r, redirectURL, http.StatusFound)
