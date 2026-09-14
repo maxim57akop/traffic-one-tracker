@@ -1,0 +1,96 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:80"
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - frontend
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER:-trafficone}:${POSTGRES_PASSWORD:-trafficone}@postgres:5432/${POSTGRES_DB:-trafficone}?sslmode=disable"
+      REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+      REDIS_CAMPAIGN_PREFIX: "${REDIS_CAMPAIGN_PREFIX:-campaign:}"
+      CLICKHOUSE_URL: "http://clickhouse:8123"
+      CLICKHOUSE_DATABASE: "${CLICKHOUSE_DB:-trafficone}"
+      ADMIN_EMAIL: "${ADMIN_EMAIL:-admin@example.com}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-padj9adsh3KAD}"
+      ADMIN_NAME: "${ADMIN_NAME:-Admin}"
+      ADMIN_TEAM: "${ADMIN_TEAM:-TrafficOne Team}"
+      CORS_ALLOW_ORIGIN: "${CORS_ALLOW_ORIGIN:-*}"
+      SERVER_IP: "${SERVER_IP:-127.0.0.1}"
+      LANDER_ROOT: /app/lander
+    volumes:
+      - ./lander:/app/lander
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-/api}"
+        NEXT_PUBLIC_TRACKER_URL: "${NEXT_PUBLIC_TRACKER_URL:-http://127.0.0.1:8080}"
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-trafficone}
+      POSTGRES_USER: "${POSTGRES_USER:-trafficone}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-trafficone}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trafficone} -d ${POSTGRES_DB:-trafficone}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8-alpine
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: "${CLICKHOUSE_DB:-trafficone}"
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./database/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  redis_data:
+  clickhouse_data:
