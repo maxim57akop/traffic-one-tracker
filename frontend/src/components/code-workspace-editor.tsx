@@ -75,10 +75,20 @@ export function CodeWorkspaceEditor({
     <div className="fixed inset-0 z-50 bg-[#1f1f1f] text-neutral-100">
       <div className="flex h-12 items-center justify-between border-b border-neutral-800 bg-[#181818] px-4">
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" disabled>
+          <Button
+            className="border-neutral-600 bg-neutral-800 text-neutral-100 disabled:opacity-100"
+            variant="outline"
+            size="sm"
+            disabled
+          >
             {labels.createFile}
           </Button>
-          <Button variant="outline" size="sm" disabled>
+          <Button
+            className="border-neutral-600 bg-neutral-800 text-neutral-100 disabled:opacity-100"
+            variant="outline"
+            size="sm"
+            disabled
+          >
             {labels.uploadFile}
           </Button>
         </div>
