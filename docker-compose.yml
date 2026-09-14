@@ -15,7 +15,7 @@ services:
       context: ./backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: "postgres://${POSTGRES_USER:-trafficone}:${POSTGRES_PASSWORD:-trafficone}@postgres:5432/${POSTGRES_DB:-trafficone}?sslmode=disable"
+      DATABASE_URL: "host=postgres port=5432 dbname=${POSTGRES_DB:-trafficone} user=${POSTGRES_USER:-trafficone} password=${POSTGRES_PASSWORD:-trafficone} sslmode=disable"
       REDIS_ADDR: "redis:6379"
       REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
       REDIS_CAMPAIGN_PREFIX: "${REDIS_CAMPAIGN_PREFIX:-campaign:}"
