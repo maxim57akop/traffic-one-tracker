@@ -9,6 +9,8 @@ import {
   BarChart3,
   Bell,
   Blocks,
+  PanelLeftClose,
+  PanelLeftOpen,
   ChevronRight,
   FileText,
   Globe2,
@@ -34,6 +36,7 @@ import { usePageTitle } from "@/lib/page-title";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api";
 const THEME_KEY = "trafficone_theme";
+const SIDEBAR_COLLAPSED_KEY = "trafficone_sidebar_collapsed";
 
 type Theme = "light" | "dark";
 
@@ -101,6 +104,7 @@ export function AppShell({ title, children }: AppShellProps) {
   const [team, setTeam] = useState<Team | null>(null);
   const [theme, setTheme] = useState<Theme>("light");
   const [themeReady, setThemeReady] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const api = useCallback(
     async <T,>(path: string, options: RequestInit = {}): Promise<T> => {
@@ -161,6 +165,8 @@ export function AppShell({ title, children }: AppShellProps) {
       if (storedTheme === "dark" || storedTheme === "light") {
         setTheme(storedTheme);
       }
+
+      setSidebarCollapsed(window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true");
       setThemeReady(true);
     }, 0);
 
@@ -187,15 +193,33 @@ export function AppShell({ title, children }: AppShellProps) {
     setThemeReady(true);
   }
 
+  function toggleSidebar() {
+    setSidebarCollapsed((currentValue) => {
+      const nextValue = !currentValue;
+      window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(nextValue));
+      return nextValue;
+    });
+  }
+
   if (!token || !user) {
     return null;
   }
 
   return (
     <main className="min-h-screen bg-neutral-100 text-neutral-950 dark:bg-neutral-950 dark:text-neutral-50">
-      <div className="grid min-h-screen lg:grid-cols-[260px_1fr]">
+      <div
+        className={[
+          "grid min-h-screen transition-[grid-template-columns] duration-200",
+          sidebarCollapsed ? "lg:grid-cols-[84px_1fr]" : "lg:grid-cols-[260px_1fr]",
+        ].join(" ")}
+      >
         <aside className="border-r border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
-          <div className="flex h-16 items-center gap-3 border-b border-neutral-200 px-5 dark:border-neutral-800">
+          <div
+            className={[
+              "flex h-16 items-center border-b border-neutral-200 dark:border-neutral-800",
+              sidebarCollapsed ? "justify-center px-3" : "gap-3 px-5",
+            ].join(" ")}
+          >
             <Image
               src="/logo.jpg"
               alt="TrafficOne"
@@ -204,15 +228,24 @@ export function AppShell({ title, children }: AppShellProps) {
               priority
               className="size-8 rounded bg-black object-cover"
             />
-            <div>
+            <div className={sidebarCollapsed ? "sr-only" : "min-w-0 flex-1"}>
               <div className="text-sm font-semibold leading-tight">TrafficOne</div>
               <div className="text-xs text-neutral-500 dark:text-neutral-400">
                 {team?.name ?? t("shell.workspace")}
               </div>
             </div>
+            <Button
+              aria-label={sidebarCollapsed ? t("shell.expandSidebar") : t("shell.collapseSidebar")}
+              title={sidebarCollapsed ? t("shell.expandSidebar") : t("shell.collapseSidebar")}
+              variant="ghost"
+              size="icon-sm"
+              onClick={toggleSidebar}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            </Button>
           </div>
 
-          <nav className="space-y-1 p-3">
+          <nav className={["space-y-1 p-3", sidebarCollapsed ? "flex flex-col items-center" : ""].join(" ")}>
             {menu.map((item) => {
               const active = pathname === item.href || (item.href === "/campaigns" && pathname.startsWith("/campaign/"));
 
@@ -220,21 +253,23 @@ export function AppShell({ title, children }: AppShellProps) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  title={sidebarCollapsed ? t(item.labelKey) : undefined}
                   className={[
-                    "flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors",
+                    "flex h-10 items-center rounded-md text-sm transition-colors",
+                    sidebarCollapsed ? "w-10 justify-center px-0" : "w-full gap-3 px-3 text-left",
                     active
                       ? "bg-neutral-950 text-white dark:bg-neutral-100 dark:text-neutral-950"
                       : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-950 dark:text-neutral-400 dark:hover:bg-neutral-900 dark:hover:text-neutral-50",
                   ].join(" ")}
                 >
-                  <item.icon className="h-4 w-4" />
-                  <span className="min-w-0 flex-1 truncate">{t(item.labelKey)}</span>
-                  {item.badge && (
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  <span className={sidebarCollapsed ? "sr-only" : "min-w-0 flex-1 truncate"}>{t(item.labelKey)}</span>
+                  {item.badge && !sidebarCollapsed && (
                     <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
                       {item.badge}
                     </span>
                   )}
-                  {item.hasChildren && <ChevronRight className="h-4 w-4 text-neutral-400" />}
+                  {item.hasChildren && !sidebarCollapsed && <ChevronRight className="h-4 w-4 text-neutral-400" />}
                 </Link>
               );
             })}
