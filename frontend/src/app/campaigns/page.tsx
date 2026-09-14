@@ -1481,7 +1481,7 @@ function FlowSchemaTab({
       {form.destinationType !== "url" ? (
         <div className="space-y-8">
           <section className="space-y-4">
-            <h3 className="text-base font-semibold">{c.landingPages}</h3>
+            <h3 className="text-base font-normal">{c.landingPages}</h3>
             {selectedLanding ? (
               <DestinationRow
                 id={selectedLanding.id}
@@ -1506,7 +1506,7 @@ function FlowSchemaTab({
           </section>
 
           <section className="space-y-4">
-            <h3 className="text-base font-semibold">{c.offers}</h3>
+            <h3 className="text-base font-normal">{c.offers}</h3>
             {selectedOffer ? (
               <DestinationRow
                 id={selectedOffer.id}
@@ -1527,7 +1527,7 @@ function FlowSchemaTab({
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-base font-semibold">{c.offerSelection}</h3>
+            <h3 className="text-base font-normal">{c.offerSelection}</h3>
             <div className="flex flex-wrap gap-7">
               <FlowModeRadio checked label={c.beforeClick} name="offer-selection" onChange={() => undefined} />
               <FlowModeRadio checked={false} label={c.afterClick} name="offer-selection" onChange={() => undefined} />
@@ -1553,7 +1553,7 @@ function FlowModeRadio({
   onChange: () => void;
 }) {
   return (
-    <label className={`flex items-center gap-3 text-base font-semibold ${disabled ? "text-muted-foreground" : "cursor-pointer"}`}>
+    <label className={`flex items-center gap-3 text-base font-normal ${disabled ? "text-muted-foreground" : "cursor-pointer"}`}>
       <input className="peer sr-only" checked={checked} disabled={disabled} name={name} type="radio" onChange={onChange} />
       <span
         className={`flex size-4 items-center justify-center rounded-full border-2 ${
@@ -1624,7 +1624,7 @@ function DestinationRow({
 }) {
   return (
     <div className="grid grid-cols-[minmax(180px,1fr)_auto_auto_auto_auto] items-center gap-4">
-      <button className="text-left text-sm font-semibold text-blue-500 hover:underline" type="button">
+      <button className="text-left text-sm font-normal text-blue-500 hover:underline" type="button">
         {name}
       </button>
       <div className="flex h-9 overflow-hidden rounded-md border dark:border-neutral-800">
@@ -1651,7 +1651,7 @@ function DestinationRow({
           }`}
         />
       </button>
-      <span className="text-sm font-semibold text-muted-foreground">#{id}</span>
+      <span className="text-sm font-normal text-muted-foreground">#{id}</span>
       <button className="text-red-500 hover:text-red-600" type="button" onClick={onDelete}>
         <Trash2 className="size-5" />
       </button>
