@@ -3228,14 +3228,25 @@ func (app *App) redirectSlug(w http.ResponseWriter, r *http.Request, slug string
 		return
 	}
 
-	clickID := ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String()
-	redirectURL, err := appendClickParams(destination.URL, clickID, campaign.ID)
+	clickID := requestClickID(r)
+	if clickID == "" {
+		clickID = ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String()
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "trafficone_click_id",
+		Value:    clickID,
+		Path:     "/",
+		MaxAge:   24 * 60 * 60,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	redirectURL, err := appendClickParams(destination.URL, clickID, campaign.ID, r.URL.Query())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Bad destination URL")
 		return
 	}
 	if destination.Type == "landing" && destination.OfferURL != "" {
-		offerURL, err := appendClickParams(destination.OfferURL, clickID, campaign.ID)
+		offerURL, err := appendClickParams(destination.OfferURL, clickID, campaign.ID, r.URL.Query())
 		if err == nil {
 			_ = app.redis.Set(r.Context(), "offer:"+clickID, offerURL, 24*time.Hour).Err()
 		}
@@ -3357,6 +3368,7 @@ func (app *App) trackerDomainForRequest(w http.ResponseWriter, r *http.Request, 
 }
 
 func selectDestination(campaign CampaignConfig, r *http.Request) (FlowConfig, StreamConfig, DestinationConfig, error) {
+	landingPageClick := r.URL.Query().Get("lp") == "1"
 	for _, flow := range campaign.Flows {
 		if !matchesFilters(flow.Filters, r) {
 			continue
@@ -3364,6 +3376,9 @@ func selectDestination(campaign CampaignConfig, r *http.Request) (FlowConfig, St
 		for _, stream := range flow.Streams {
 			if landing, ok := weightedDestinationByType(stream.Destinations, "landing"); ok {
 				if offer, ok := weightedDestinationByType(stream.Destinations, "offer"); ok {
+					if landingPageClick {
+						return flow, stream, offer, nil
+					}
 					landing.OfferURL = offer.URL
 				}
 				return flow, stream, landing, nil
@@ -4420,12 +4435,32 @@ func isLocalAdminHost(host string) bool {
 	return host == "" || host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
-func appendClickParams(rawURL, clickID string, campaignID int64) (string, error) {
+func requestClickID(r *http.Request) string {
+	clickID := firstNonEmpty(r.URL.Query().Get("click_id"), r.URL.Query().Get("subid"))
+	if clickID != "" {
+		return clickID
+	}
+	cookie, err := r.Cookie("trafficone_click_id")
+	if err == nil {
+		return strings.TrimSpace(cookie.Value)
+	}
+	return ""
+}
+
+func appendClickParams(rawURL, clickID string, campaignID int64, sourceQuery url.Values) (string, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return "", err
 	}
 	values := parsed.Query()
+	for key, sourceValues := range sourceQuery {
+		if key == "" || values.Has(key) {
+			continue
+		}
+		for _, value := range sourceValues {
+			values.Add(key, value)
+		}
+	}
 	values.Set("subid", clickID)
 	values.Set("click_id", clickID)
 	values.Set("campaign_id", strconv.FormatInt(campaignID, 10))
