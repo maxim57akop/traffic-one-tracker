@@ -3193,6 +3193,9 @@ func (app *App) offerRedirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if app.serveLandingURL(w, r, offerURL) {
+		return
+	}
 	http.Redirect(w, r, offerURL, http.StatusFound)
 }
 
