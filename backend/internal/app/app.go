@@ -1447,6 +1447,8 @@ func (app *App) createLanding(w http.ResponseWriter, r *http.Request, user User)
 }
 
 func (app *App) domains(w http.ResponseWriter, r *http.Request, user User) {
+	app.refreshDomainDNSStatuses(r.Context())
+
 	rows, err := app.db.Query(
 		r.Context(),
 		`SELECT d.id, d.team_id, d.user_id, d.domain, d.group_name, d.status,
@@ -1750,11 +1752,56 @@ func (app *App) domainPointsToServer(parent context.Context, domain string) bool
 	}
 
 	for _, address := range addresses {
-		if address.IP.Equal(serverIP) {
+		if address.IP.Equal(serverIP) || isCloudflareProxyIP(address.IP) {
 			return true
 		}
 	}
 	return false
+}
+
+func isCloudflareProxyIP(ip net.IP) bool {
+	for _, cidr := range cloudflareProxyCIDRs {
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+var cloudflareProxyCIDRs = parseCIDRs([]string{
+	"173.245.48.0/20",
+	"103.21.244.0/22",
+	"103.22.200.0/22",
+	"103.31.4.0/22",
+	"141.101.64.0/18",
+	"108.162.192.0/18",
+	"190.93.240.0/20",
+	"188.114.96.0/20",
+	"197.234.240.0/22",
+	"198.41.128.0/17",
+	"162.158.0.0/15",
+	"104.16.0.0/13",
+	"104.24.0.0/14",
+	"172.64.0.0/13",
+	"131.0.72.0/22",
+	"2400:cb00::/32",
+	"2606:4700::/32",
+	"2803:f800::/32",
+	"2405:b500::/32",
+	"2405:8100::/32",
+	"2a06:98c0::/29",
+	"2c0f:f248::/32",
+})
+
+func parseCIDRs(values []string) []*net.IPNet {
+	ranges := make([]*net.IPNet, 0, len(values))
+	for _, value := range values {
+		_, cidr, err := net.ParseCIDR(value)
+		if err == nil {
+			ranges = append(ranges, cidr)
+		}
+	}
+	return ranges
 }
 
 func (app *App) flows(w http.ResponseWriter, r *http.Request, user User) {
@@ -3047,12 +3094,12 @@ func (app *App) robots(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) trackerFallback(w http.ResponseWriter, r *http.Request) {
-	domain, ok := app.requireKnownDomain(w, r)
+	path := strings.Trim(r.URL.Path, "/")
+	domain, ok := app.trackerDomainForRequest(w, r, path == "")
 	if !ok {
 		return
 	}
 
-	path := strings.Trim(r.URL.Path, "/")
 	if path == "" {
 		if domain != nil && domain.IndexCampaignSlug != nil {
 			app.redirectSlug(w, r, *domain.IndexCampaignSlug)
@@ -3068,6 +3115,29 @@ func (app *App) trackerFallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeError(w, http.StatusNotFound, "Not found")
+}
+
+func (app *App) trackerDomainForRequest(w http.ResponseWriter, r *http.Request, allowAdminRoot bool) (*Domain, bool) {
+	host := requestHost(r)
+	if isLocalAdminHost(host) {
+		return nil, true
+	}
+
+	domain, err := app.domainByHost(r.Context(), host)
+	if err == nil {
+		return &domain, true
+	}
+	if domain, err = app.domainByHostAnyStatus(r.Context(), host); err == nil {
+		return &domain, true
+	}
+
+	if allowAdminRoot {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return nil, false
+	}
+
+	writeError(w, http.StatusNotFound, "Domain not parked")
+	return nil, false
 }
 
 func selectDestination(campaign CampaignConfig, r *http.Request) (FlowConfig, StreamConfig, DestinationConfig, error) {
@@ -4070,6 +4140,20 @@ func (app *App) domainByHost(ctx context.Context, host string) (Domain, error) {
 		 FROM domains d
 		 LEFT JOIN campaigns c ON c.id = d.index_campaign_id AND c.team_id = d.team_id
 		 WHERE d.domain = $1 AND d.status = 'ok'`,
+		host,
+	))
+}
+
+func (app *App) domainByHostAnyStatus(ctx context.Context, host string) (Domain, error) {
+	return scanDomain(app.db.QueryRow(
+		ctx,
+		`SELECT d.id, d.team_id, d.user_id, d.domain, d.group_name, d.status,
+		        d.allow_indexing, d.allow_admin_access, d.https_only,
+		        d.index_campaign_id, c.name, c.slug,
+		        CASE WHEN d.index_campaign_id IS NULL THEN 0 ELSE 1 END
+		 FROM domains d
+		 LEFT JOIN campaigns c ON c.id = d.index_campaign_id AND c.team_id = d.team_id
+		 WHERE d.domain = $1 AND d.status <> 'disabled'`,
 		host,
 	))
 }
