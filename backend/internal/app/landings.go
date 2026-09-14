@@ -578,6 +578,9 @@ func (app *App) extractLandingZip(localPath string, file multipart.File, size in
 	if err != nil {
 		return err
 	}
+	if err := os.Chmod(tempRoot, 0o755); err != nil {
+		return err
+	}
 	defer os.RemoveAll(tempRoot)
 
 	stripPrefix := commonZipRoot(reader.File)
@@ -610,7 +613,7 @@ func (app *App) extractLandingZip(localPath string, file multipart.File, size in
 		if err != nil {
 			return err
 		}
-		target, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, zipFile.FileInfo().Mode())
+		target, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 		if err != nil {
 			_ = source.Close()
 			return err
@@ -637,7 +640,22 @@ func (app *App) extractLandingZip(localPath string, file multipart.File, size in
 	if err := os.Rename(tempRoot, root); err != nil {
 		return err
 	}
+	if err := ensureLandingPermissions(root); err != nil {
+		return err
+	}
 	return nil
+}
+
+func ensureLandingPermissions(root string) error {
+	return filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return os.Chmod(path, 0o755)
+		}
+		return os.Chmod(path, 0o644)
+	})
 }
 
 func commonZipRoot(files []*zip.File) string {
