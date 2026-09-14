@@ -28,17 +28,9 @@ export default function HomePage() {
     const isPreview = (object === "landings.preview" || object === "offers.preview") && id;
 
     if (isPreview) {
-      const token = getAuthToken();
-      if (!token) {
-        router.replace("/login");
-        return;
-      }
-
-      const path = object === "landings.preview" ? `/landings/${id}` : `/offers/${id}`;
-      void fetch(`${API_URL}${path}`, {
+      void fetch(`${API_URL}/preview?object=${encodeURIComponent(object)}&id=${encodeURIComponent(id)}`, {
         headers: {
           Accept: "application/json",
-          Authorization: `Bearer ${token}`,
         },
       })
         .then(async (response) => {

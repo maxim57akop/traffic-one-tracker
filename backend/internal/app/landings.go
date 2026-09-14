@@ -778,6 +778,14 @@ func landingURL(localPath string) string {
 	return "/lander/" + localPath + "/"
 }
 
+func (app *App) previewLandingURL(localPath string) string {
+	_, relative, err := app.resolveLandingRequest(localPath)
+	if err != nil {
+		return ""
+	}
+	return "/preview/lander/" + relative
+}
+
 func previewObjectURL(object string, id int64) string {
 	return "/preview?object=" + url.QueryEscape(object) + "&id=" + strconv.FormatInt(id, 10)
 }
@@ -797,31 +805,40 @@ func (app *App) preview(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Query().Get("object") {
 	case "landings.preview":
 		var record struct {
-			URL string `json:"url"`
+			URL         string `json:"url"`
+			LandingType string `json:"landing_type,omitempty"`
+			LocalPath   string `json:"local_path,omitempty"`
 		}
 		err := app.db.QueryRow(
 			r.Context(),
-			"SELECT COALESCE(NULLIF(url, ''), '/lander/' || local_path || '/') FROM landings WHERE id = $1 AND status IN ('active', 'paused')",
+			"SELECT url, COALESCE(NULLIF(landing_type, ''), 'local'), COALESCE(local_path, '') FROM landings WHERE id = $1 AND status IN ('active', 'paused')",
 			id,
-		).Scan(&record.URL)
+		).Scan(&record.URL, &record.LandingType, &record.LocalPath)
 		if err != nil {
 			writeError(w, http.StatusNotFound, "Preview not found")
 			return
+		}
+		if record.LandingType == "local" || record.URL == "" {
+			record.URL = app.previewLandingURL(record.LocalPath)
 		}
 		writeJSON(w, http.StatusOK, record)
 	case "offers.preview":
 		var record struct {
 			URL       string `json:"url"`
 			OfferType string `json:"offer_type"`
+			LocalPath string `json:"local_path,omitempty"`
 		}
 		err := app.db.QueryRow(
 			r.Context(),
-			"SELECT COALESCE(NULLIF(url, ''), '/lander/' || local_path || '/'), COALESCE(NULLIF(offer_type, ''), 'redirect') FROM offers WHERE id = $1 AND status IN ('active', 'paused')",
+			"SELECT url, COALESCE(NULLIF(offer_type, ''), 'redirect'), COALESCE(local_path, '') FROM offers WHERE id = $1 AND status IN ('active', 'paused')",
 			id,
-		).Scan(&record.URL, &record.OfferType)
+		).Scan(&record.URL, &record.OfferType, &record.LocalPath)
 		if err != nil {
 			writeError(w, http.StatusNotFound, "Preview not found")
 			return
+		}
+		if record.OfferType == "local" || record.URL == "" {
+			record.URL = app.previewLandingURL(record.LocalPath)
 		}
 		writeJSON(w, http.StatusOK, record)
 	default:
