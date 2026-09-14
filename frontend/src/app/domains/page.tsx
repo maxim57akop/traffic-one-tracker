@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { getAuthToken } from "@/lib/auth-token";
+import { useI18n } from "@/lib/i18n";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api";
 
@@ -91,6 +92,7 @@ export default function DomainsPage() {
 }
 
 function DomainsManagement() {
+  const { t } = useI18n();
   const [domains, setDomains] = useState<Domain[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [serverIP, setServerIP] = useState("127.0.0.1");
@@ -176,7 +178,7 @@ function DomainsManagement() {
 
   async function saveDomain() {
     if (!form.domain.trim()) {
-      setError("Domain is required");
+      setError(t("domain.errorRequired"));
       return;
     }
 
@@ -211,14 +213,14 @@ function DomainsManagement() {
 
       closeModal();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Could not save domain");
+      setError(requestError instanceof Error ? requestError.message : t("domain.errorSave"));
     } finally {
       setSaving(false);
     }
   }
 
   async function deleteDomain(domain: Domain) {
-    const confirmed = window.confirm(`Delete ${domain.domain}?`);
+    const confirmed = window.confirm(t("domain.deleteConfirm").replace("{domain}", domain.domain));
     if (!confirmed) {
       return;
     }
@@ -228,7 +230,7 @@ function DomainsManagement() {
       await apiRequest<void>(`/domains/${domain.id}`, { method: "DELETE" });
       setDomains((items) => items.filter((item) => item.id !== domain.id));
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Could not delete domain");
+      setError(requestError instanceof Error ? requestError.message : t("domain.errorDelete"));
     }
   }
 
@@ -244,14 +246,14 @@ function DomainsManagement() {
           onClick={openCreateModal}
         >
           <Plus className="h-4 w-4" />
-          Add
+          {t("actions.add")}
         </Button>
         <Button variant="outline" className="h-9 rounded-md px-3">
-          Groups
+          {t("common.groups")}
         </Button>
         <Input
           className="h-9 w-64 rounded-md bg-white"
-          placeholder="Search domain"
+          placeholder={t("domain.searchPlaceholder")}
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
@@ -271,7 +273,7 @@ function DomainsManagement() {
           value={groupFilter}
           onChange={(event) => setGroupFilter(event.target.value)}
         >
-          <option value="all">All groups</option>
+          <option value="all">{t("common.allGroups")}</option>
           {groups.map((group) => (
             <option key={group} value={group}>
               {group}
@@ -283,10 +285,10 @@ function DomainsManagement() {
           value={statusFilter}
           onChange={(event) => setStatusFilter(event.target.value)}
         >
-          <option value="all">All statuses</option>
+          <option value="all">{t("domain.allStatuses")}</option>
           <option value="ok">OK</option>
-          <option value="awaiting_dns">Awaiting DNS</option>
-          <option value="disabled">Disabled</option>
+          <option value="awaiting_dns">{t("domain.statusAwaitingDns")}</option>
+          <option value="disabled">{t("common.disabled")}</option>
         </Select>
         <Button variant="outline" size="icon-lg" className="rounded-md" onClick={() => void loadDomains()}>
           <RefreshCw className="h-4 w-4" />
@@ -304,12 +306,12 @@ function DomainsManagement() {
           <thead className="bg-neutral-50 text-neutral-500">
             <tr>
               <th className="h-10 w-14 border-b border-neutral-200 px-3 font-medium">ID</th>
-              <th className="h-10 border-b border-neutral-200 px-3 font-medium">Domain</th>
-              <th className="h-10 border-b border-neutral-200 px-3 font-medium">Group</th>
-              <th className="h-10 border-b border-neutral-200 px-3 font-medium">Status</th>
-              <th className="h-10 border-b border-neutral-200 px-3 font-medium">Features</th>
-              <th className="h-10 border-b border-neutral-200 px-3 font-medium">Index page</th>
-              <th className="h-10 w-28 border-b border-neutral-200 px-3 font-medium">Campaigns</th>
+              <th className="h-10 border-b border-neutral-200 px-3 font-medium">{t("domain.domain")}</th>
+              <th className="h-10 border-b border-neutral-200 px-3 font-medium">{t("common.group")}</th>
+              <th className="h-10 border-b border-neutral-200 px-3 font-medium">{t("common.state")}</th>
+              <th className="h-10 border-b border-neutral-200 px-3 font-medium">{t("domain.features")}</th>
+              <th className="h-10 border-b border-neutral-200 px-3 font-medium">{t("domain.indexPage")}</th>
+              <th className="h-10 w-28 border-b border-neutral-200 px-3 font-medium">{t("menu.campaigns")}</th>
               <th className="h-10 w-20 border-b border-neutral-200 px-3 text-right font-medium" />
             </tr>
           </thead>
@@ -317,13 +319,13 @@ function DomainsManagement() {
             {loading ? (
               <tr>
                 <td colSpan={8} className="h-20 px-3 text-neutral-500">
-                  Loading domains...
+                  {t("domain.loading")}
                 </td>
               </tr>
             ) : filteredDomains.length === 0 ? (
               <tr>
                 <td colSpan={8} className="h-20 px-3 text-neutral-500">
-                  No domains yet.
+                  {t("domain.noItems")}
                 </td>
               </tr>
             ) : (
@@ -341,17 +343,17 @@ function DomainsManagement() {
                   </td>
                   <td className="h-11 px-3 text-neutral-700">{domain.group_name ?? "-"}</td>
                   <td className="h-11 px-3">
-                    <span className={statusClassName(domain.status)}>{statusLabel(domain.status)}</span>
+                    <span className={statusClassName(domain.status)}>{statusLabel(domain.status, t)}</span>
                   </td>
                   <td className="h-11 px-3">
                     <div className="flex flex-wrap gap-1.5">
                       {domain.https_only && <Badge>HTTPS-only</Badge>}
-                      {!domain.allow_indexing && <Badge>Robots disallow</Badge>}
-                      {domain.allow_admin_access && <Badge>Admin access</Badge>}
+                      {!domain.allow_indexing && <Badge>{t("domain.robotsDisallow")}</Badge>}
+                      {domain.allow_admin_access && <Badge>{t("domain.adminAccess")}</Badge>}
                     </div>
                   </td>
                   <td className="h-11 px-3 text-neutral-700">
-                    {domain.index_campaign_name ?? "None"}
+                    {domain.index_campaign_name ?? t("common.none")}
                   </td>
                   <td className="h-11 px-3">
                     <span className="font-medium text-blue-600">{domain.campaigns_count}</span>
@@ -359,7 +361,7 @@ function DomainsManagement() {
                   <td className="h-11 px-3 text-right">
                     <div className="flex justify-end gap-1">
                       <Button
-                        aria-label={`Open ${domain.domain}`}
+                        aria-label={t("domain.openDomain").replace("{domain}", domain.domain)}
                         disabled={domain.status !== "ok"}
                         size="icon-sm"
                         variant="ghost"
@@ -368,7 +370,7 @@ function DomainsManagement() {
                         <ExternalLink className="h-4 w-4" />
                       </Button>
                       <Button
-                        aria-label={`Delete ${domain.domain}`}
+                        aria-label={t("domain.deleteDomain").replace("{domain}", domain.domain)}
                         size="icon-sm"
                         variant="ghost"
                         className="text-red-500 hover:bg-red-50 hover:text-red-600"
@@ -390,10 +392,10 @@ function DomainsManagement() {
           <div className="max-h-[calc(100vh-32px)] w-full max-w-3xl overflow-auto rounded-lg bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-neutral-200 px-6 py-4">
               <h2 className="text-xl font-semibold tracking-normal">
-                {editingDomain ? "Edit Domain" : "Add Domain"}
+                {editingDomain ? t("domain.editTitle") : t("domain.addTitle")}
               </h2>
               <div className="flex items-center gap-3">
-                <Button aria-label="Close" variant="ghost" size="icon-sm" onClick={closeModal}>
+                <Button aria-label={t("actions.close")} variant="ghost" size="icon-sm" onClick={closeModal}>
                   <X className="h-4 w-4" />
                 </Button>
               </div>
@@ -401,7 +403,7 @@ function DomainsManagement() {
 
             <div className="space-y-6 px-6 py-5">
               <div className="space-y-2">
-                <Label htmlFor="domain-name">Domain</Label>
+                <Label htmlFor="domain-name">{t("domain.domain")}</Label>
                 <Input
                   id="domain-name"
                   placeholder="domain.com"
@@ -410,62 +412,58 @@ function DomainsManagement() {
                 />
                 {!editingDomain && (
                   <p className="text-sm text-neutral-500">
-                    To add multiple domains, type a list with separation by commas.
+                    {t("domain.multipleHint")}
                   </p>
                 )}
               </div>
 
               <div className="grid gap-5 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="domain-group">Group</Label>
+                  <Label htmlFor="domain-group">{t("common.group")}</Label>
                   <Input
                     id="domain-group"
-                    placeholder="Type to search or create"
+                    placeholder={t("common.typeSearchCreate")}
                     value={form.groupName}
                     onChange={(event) => setForm({ ...form, groupName: event.target.value })}
                   />
                 </div>
-                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-800">
-                  Status is checked automatically by DNS every 5 minutes. Domain becomes OK only
-                  when its A record points to the server IP.
-                </div>
               </div>
 
               <ToggleRow
-                description="Controls the generated robots.txt for this tracker domain."
-                falseLabel="Disallow"
-                label="Crawlers"
+                description={t("domain.crawlersDescription")}
+                falseLabel={t("domain.disallow")}
+                label={t("domain.crawlers")}
                 onChange={(value) => setForm({ ...form, allowIndexing: value })}
-                trueLabel="Allow indexing"
+                trueLabel={t("domain.allowIndexing")}
                 value={form.allowIndexing}
               />
 
               <ToggleRow
-                description="Allow this domain to be used for dashboard access later."
-                falseLabel="Deny access"
-                label="Admin dashboard"
+                description={t("domain.adminDashboardDescription")}
+                falseLabel={t("domain.denyAccess")}
+                label={t("domain.adminDashboard")}
                 onChange={(value) => setForm({ ...form, allowAdminAccess: value })}
-                trueLabel="Allow access"
+                trueLabel={t("domain.allowAccess")}
                 value={form.allowAdminAccess}
               />
 
               <ToggleRow
-                description="Marks the domain as HTTPS-only in tracker settings."
-                falseLabel="Off"
+                description={t("domain.httpsDescription")}
+                falseLabel={t("domain.off")}
                 label="HTTPS-only"
                 onChange={(value) => setForm({ ...form, httpsOnly: value })}
-                trueLabel="On"
+                trueLabel={t("domain.on")}
                 value={form.httpsOnly}
               />
 
               <div className="space-y-2">
-                <Label htmlFor="domain-index">Index page</Label>
+                <Label htmlFor="domain-index">{t("domain.indexPage")}</Label>
                 <Select
                   id="domain-index"
                   value={form.indexCampaignID}
                   onChange={(event) => setForm({ ...form, indexCampaignID: event.target.value })}
                 >
-                  <option value="">None</option>
+                  <option value="">{t("common.none")}</option>
                   {campaigns.map((campaign) => (
                     <option key={campaign.id} value={campaign.id}>
                       {campaign.name} /{campaign.slug}
@@ -473,12 +471,12 @@ function DomainsManagement() {
                   ))}
                 </Select>
                 <p className="text-sm text-neutral-500">
-                  Choose a campaign to open when this domain is requested without a slug.
+                  {t("domain.indexHint")}
                 </p>
               </div>
 
               <div className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-600">
-                Add an A record on your registrar side with server IP{" "}
+                {t("domain.aRecordHint")}{" "}
                 <span className="font-mono font-semibold text-red-400">{serverIP}</span>.
               </div>
 
@@ -491,7 +489,7 @@ function DomainsManagement() {
 
             <div className="flex items-center justify-end gap-2 border-t border-neutral-200 px-6 py-4">
               <Button variant="outline" onClick={closeModal}>
-                Cancel
+                {t("actions.cancel")}
               </Button>
               <Button
                 className="bg-[#45b84a] text-white hover:bg-[#3da442]"
@@ -499,7 +497,7 @@ function DomainsManagement() {
                 onClick={() => void saveDomain()}
               >
                 <Plus className="h-4 w-4" />
-                {editingDomain ? "Save" : "Add"}
+                {editingDomain ? t("actions.save") : t("actions.add")}
               </Button>
             </div>
           </div>
@@ -552,14 +550,14 @@ function ToggleRow({
   );
 }
 
-function statusLabel(status: DomainStatus) {
+function statusLabel(status: DomainStatus, t: ReturnType<typeof useI18n>["t"]) {
   if (status === "ok") {
     return "OK";
   }
   if (status === "awaiting_dns") {
-    return "Awaiting DNS";
+    return t("domain.statusAwaitingDns");
   }
-  return "Disabled";
+  return t("common.disabled");
 }
 
 function statusClassName(status: DomainStatus) {
